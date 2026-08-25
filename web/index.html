@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#071014">
+  <title>AX9000 代理控制台</title>
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="backdrop"></div>
+
+  <section id="login-view" class="login-view">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark">AX</div>
+      <p class="eyebrow">XIAOMI ROUTER · LOCAL CONTROL</p>
+      <h1>AX9000 代理控制台</h1>
+      <p class="muted">ShellCrash 与雷神加速器的安全互斥控制、会话观察和故障日志。</p>
+      <label for="password">控制台密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button class="button primary wide" type="submit">进入控制台</button>
+      <p id="login-message" class="form-success" aria-live="polite"></p>
+      <p id="login-error" class="form-error" aria-live="polite"></p>
+      <p class="tiny">仅在路由器主 LAN 地址监听，连续登录失败将临时锁定。</p>
+    </form>
+  </section>
+
+  <div id="app-view" class="app-view hidden">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">AX9000 · PROXY ORCHESTRATOR</p>
+        <h1>代理控制台</h1>
+      </div>
+      <div class="topbar-actions">
+        <div id="live-indicator" class="live-indicator"><span></span>实时刷新</div>
+        <button id="diagnostics-button" class="button ghost">复制诊断</button>
+        <button id="password-button" class="button ghost">修改密码</button>
+        <button id="logout-button" class="button ghost">退出</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="overview-grid">
+        <article class="mode-card panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">CURRENT MODE</p>
+              <h2>当前工作模式</h2>
+            </div>
+            <span id="mode-badge" class="badge neutral">读取中</span>
+          </div>
+          <div class="mode-visual">
+            <div id="mode-icon" class="mode-icon">↻</div>
+            <div>
+              <strong id="mode-title">正在检查服务</strong>
+              <p id="mode-description" class="muted">请稍候</p>
+            </div>
+          </div>
+          <div class="mode-actions">
+            <button class="button danger-outline" data-action="stop_all">全部停止</button>
+            <button class="button ghost" id="refresh-button">立即刷新</button>
+          </div>
+        </article>
+
+        <article class="metrics-card panel">
+          <div class="metric"><span>可用内存</span><strong id="memory-metric">—</strong></div>
+          <div class="metric"><span>控制台内存</span><strong id="controller-memory">—</strong></div>
+          <div class="metric"><span>系统负载</span><strong id="load-metric">—</strong></div>
+          <div class="metric"><span>路由器运行</span><strong id="uptime-metric">—</strong></div>
+        </article>
+      </section>
+
+      <section class="service-grid">
+        <article id="shellcrash-card" class="service-card panel cyan">
+          <div class="service-head">
+            <div class="service-symbol">S</div>
+            <div>
+              <p class="eyebrow">MIHOMO · TRANSPARENT PROXY</p>
+              <h2>ShellCrash</h2>
+            </div>
+            <span id="shellcrash-state" class="status-pill offline">已停止</span>
+          </div>
+          <div class="service-stats">
+            <div><span>进程</span><strong id="shellcrash-processes">0</strong></div>
+            <div><span>内存</span><strong id="shellcrash-memory">0 MB</strong></div>
+            <div><span>健康</span><strong id="shellcrash-health">—</strong></div>
+          </div>
+          <div class="service-actions">
+            <button class="button primary" data-action="start_shellcrash">启动 / 切换</button>
+            <button class="button secondary" data-action="restart_shellcrash">重启</button>
+          </div>
+        </article>
+
+        <article id="leigod-card" class="service-card panel amber">
+          <div class="service-head">
+            <div class="service-symbol">L</div>
+            <div>
+              <p class="eyebrow">GAME TUNNEL · DEVICE POLICY</p>
+              <h2>雷神加速器</h2>
+            </div>
+            <span id="leigod-state" class="status-pill offline">已停止</span>
+          </div>
+          <div class="service-stats">
+            <div><span>加速设备</span><strong id="leigod-targets">0</strong></div>
+            <div><span>内存</span><strong id="leigod-memory">0 MB</strong></div>
+            <div><span>游戏隧道</span><strong id="leigod-tun">—</strong></div>
+          </div>
+          <div class="service-actions">
+            <button class="button amber-button" data-action="start_leigod">启动 / 切换</button>
+            <button class="button secondary" data-action="restart_leigod">重启</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel console-panel">
+        <div class="panel-heading console-heading">
+          <div>
+            <p class="eyebrow">LIVE NETWORK SESSIONS</p>
+            <h2>网络会话</h2>
+          </div>
+          <div class="console-controls">
+            <div class="segmented" id="service-tabs">
+              <button class="active" data-service="auto">跟随模式</button>
+              <button data-service="shellcrash">ShellCrash</button>
+              <button data-service="leigod">雷神</button>
+            </div>
+            <input id="session-filter" class="filter-input" type="search" placeholder="筛选 IP、域名或规则">
+          </div>
+        </div>
+        <div class="session-summary">
+          <span><b id="session-count">0</b> 个活动会话</span>
+          <span>上传 <b id="session-upload">0 B</b></span>
+          <span>下载 <b id="session-download">0 B</b></span>
+          <span id="session-message" class="muted"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>协议 / 状态</th><th>来源</th><th>目标</th><th>规则 / 路由</th><th>流量 / 超时</th></tr>
+            </thead>
+            <tbody id="session-table-body">
+              <tr><td colspan="5" class="empty-state">等待会话数据</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel logs-panel">
+        <div class="panel-heading console-heading">
+          <div>
+            <p class="eyebrow">SERVICE & AUDIT LOGS</p>
+            <h2>运行与故障日志</h2>
+          </div>
+          <div class="segmented" id="log-tabs">
+            <button class="active" data-log-service="all">全部</button>
+            <button data-log-service="shellcrash">ShellCrash</button>
+            <button data-log-service="leigod">雷神</button>
+          </div>
+        </div>
+        <div id="log-output" class="log-output"><div class="log-line muted">等待日志数据</div></div>
+      </section>
+    </main>
+
+    <div id="password-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="password-modal-title">
+      <form id="password-form" class="modal-card">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow">ACCOUNT SECURITY</p>
+            <h2 id="password-modal-title">修改管理密码</h2>
+          </div>
+          <button id="password-close" class="icon-button" type="button" aria-label="关闭">×</button>
+        </div>
+        <p class="muted modal-description">修改后所有已登录设备都会退出，需要使用新密码重新登录。</p>
+
+        <label for="current-password">当前密码</label>
+        <input id="current-password" type="password" autocomplete="current-password" required>
+
+        <label for="new-password">新密码</label>
+        <input id="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+        <p class="form-hint">8–128 个字符，可以使用容易记忆的中文或英文短语。</p>
+
+        <label for="confirm-password">确认新密码</label>
+        <input id="confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+
+        <label class="password-visibility">
+          <input id="show-passwords" type="checkbox">
+          <span>显示输入的密码</span>
+        </label>
+
+        <p id="password-error" class="form-error" aria-live="polite"></p>
+        <div class="modal-actions">
+          <button id="password-cancel" class="button ghost" type="button">取消</button>
+          <button class="button primary" type="submit">保存并重新登录</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

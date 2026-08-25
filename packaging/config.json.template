@@ -1,0 +1,22 @@
+{
+  "listen": "__LISTEN_ADDRESS__",
+  "mode_command": "/usr/bin/router-proxy-mode",
+  "mode_file": "/data/router_proxy_mode",
+  "shellcrash_config_paths": [
+    "/tmp/ShellCrash/config.yaml",
+    "/extdisks/sda1/ShellClash/yamls/config.yaml"
+  ],
+  "mihomo_controller_url": "http://127.0.0.1:9097",
+  "conntrack_paths": [
+    "/proc/net/nf_conntrack",
+    "/proc/net/ip_conntrack"
+  ],
+  "ipset_command": "/usr/sbin/ipset",
+  "logread_command": "/sbin/logread",
+  "password_salt": "__PASSWORD_SALT__",
+  "password_sha256": "__PASSWORD_SHA256__",
+  "session_ttl_minutes": 720,
+  "max_sessions": 300,
+  "max_log_lines": 250,
+  "auto_rollback": true
+}

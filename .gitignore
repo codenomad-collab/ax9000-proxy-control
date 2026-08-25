@@ -1,0 +1,11 @@
+/build/
+*.tmp
+*.log
+.env
+.env.*
+!.env.example
+config.json
+*.key
+*.pem
+*.p12
+.DS_Store
