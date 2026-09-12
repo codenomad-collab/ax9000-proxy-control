@@ -20,6 +20,10 @@ type Config struct {
 	ConntrackPaths        []string `json:"conntrack_paths"`
 	IPSetCommand          string   `json:"ipset_command"`
 	LogreadCommand        string   `json:"logread_command"`
+	NodeGuardCommand      string   `json:"node_guard_command"`
+	NodeGuardStatePath    string   `json:"node_guard_state_path"`
+	NodeGuardLogPath      string   `json:"node_guard_log_path"`
+	NodeGuardCronPath     string   `json:"node_guard_cron_path"`
 	PasswordSalt          string   `json:"password_salt"`
 	PasswordSHA256        string   `json:"password_sha256"`
 	SessionTTLMinutes     int      `json:"session_ttl_minutes"`
@@ -42,12 +46,16 @@ func defaultConfig() Config {
 			"/proc/net/nf_conntrack",
 			"/proc/net/ip_conntrack",
 		},
-		IPSetCommand:      "/usr/sbin/ipset",
-		LogreadCommand:    "/sbin/logread",
-		SessionTTLMinutes: 720,
-		MaxSessions:       300,
-		MaxLogLines:       250,
-		AutoRollback:      true,
+		IPSetCommand:       "/usr/sbin/ipset",
+		LogreadCommand:     "/sbin/logread",
+		NodeGuardCommand:   "/extdisks/sda1/ShellClash/tools/ax9000-ai-node-guard",
+		NodeGuardStatePath: "/extdisks/sda1/ShellClash/tools/ai-node-guard-state.json",
+		NodeGuardLogPath:   "/extdisks/sda1/ShellClash/logs/ai-node-guard.log",
+		NodeGuardCronPath:  "/etc/crontabs/root",
+		SessionTTLMinutes:  720,
+		MaxSessions:        300,
+		MaxLogLines:        250,
+		AutoRollback:       true,
 	}
 }
 
@@ -72,6 +80,16 @@ func (c Config) validate() error {
 	}
 	if c.ModeCommand == "" || c.ModeFile == "" {
 		return errors.New("mode command and mode file are required")
+	}
+	for name, path := range map[string]string{
+		"node_guard_command":    c.NodeGuardCommand,
+		"node_guard_state_path": c.NodeGuardStatePath,
+		"node_guard_log_path":   c.NodeGuardLogPath,
+		"node_guard_cron_path":  c.NodeGuardCronPath,
+	} {
+		if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "\r\n") {
+			return fmt.Errorf("%s must be an absolute path without newlines", name)
+		}
 	}
 	if c.PasswordSalt == "" || c.PasswordSHA256 == "" {
 		return errors.New("password salt and password hash are required")

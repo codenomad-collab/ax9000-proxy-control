@@ -153,6 +153,8 @@ func (a *App) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	nodeGuard := a.nodeGuardStatus()
+	nodeGuard.Logs = nil
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":                 version,
 		"service_uptime_seconds":  time.Since(a.startedAt).Seconds(),
@@ -164,6 +166,7 @@ func (a *App) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		"auto_rollback":           a.cfg.AutoRollback,
 		"maximum_session_rows":    a.cfg.MaxSessions,
 		"audit_entries":           len(a.audit.snapshot(0)),
+		"node_guard":              nodeGuard,
 	})
 }
 

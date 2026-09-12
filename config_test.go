@@ -3,6 +3,9 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -13,6 +16,35 @@ func testConfig(password string) Config {
 	sum := sha256.Sum256([]byte(cfg.PasswordSalt + password))
 	cfg.PasswordSHA256 = hex.EncodeToString(sum[:])
 	return cfg
+}
+
+func TestLoadLegacyConfigAddsNodeGuardDefaults(t *testing.T) {
+	cfg := testConfig("password")
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "node_guard_command")
+	delete(legacy, "node_guard_state_path")
+	delete(legacy, "node_guard_log_path")
+	delete(legacy, "node_guard_cron_path")
+	data, _ = json.Marshal(legacy)
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := defaultConfig()
+	if loaded.NodeGuardCommand != defaults.NodeGuardCommand || loaded.NodeGuardCronPath != defaults.NodeGuardCronPath {
+		t.Fatalf("node guard defaults were not applied: %+v", loaded)
+	}
 }
 
 func TestPasswordMatches(t *testing.T) {

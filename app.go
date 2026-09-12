@@ -19,6 +19,7 @@ type App struct {
 	auth         *authStore
 	audit        *AuditLog
 	actionMu     sync.Mutex
+	nodeGuardMu  sync.Mutex
 	targetMu     sync.Mutex
 	targets      []netip.Prefix
 	targetAt     time.Time
@@ -86,6 +87,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/logs", a.requireAuth(a.handleLogs))
 	mux.HandleFunc("/api/diagnostics", a.requireAuth(a.handleDiagnostics))
 	mux.HandleFunc("/api/action", a.requireAuth(a.handleAction))
+	mux.HandleFunc("/api/node-guard", a.requireAuth(a.handleNodeGuard))
+	mux.HandleFunc("/api/node-guard/action", a.requireAuth(a.handleNodeGuardAction))
 
 	assets, err := fs.Sub(webFiles, "web")
 	if err != nil {

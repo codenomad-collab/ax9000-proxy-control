@@ -117,6 +117,62 @@
         </article>
       </section>
 
+      <section class="panel guard-panel">
+        <div class="panel-heading guard-heading">
+          <div class="service-head">
+            <div class="service-symbol guard-symbol">G</div>
+            <div>
+              <p class="eyebrow">AI ROUTE HEALTH · ROUTER LOCAL</p>
+              <h2>AI 节点守护</h2>
+              <p class="muted guard-description">定期检查 OpenAI、Claude 与 GitHub 的美国线路，并在证据充分时自动修复节点。</p>
+            </div>
+          </div>
+          <div class="guard-heading-actions">
+            <span id="guard-running" class="status-pill offline">空闲</span>
+            <span id="guard-state" class="status-pill offline">读取中</span>
+          </div>
+        </div>
+
+        <div class="guard-metrics">
+          <div><span>守护版本</span><strong id="guard-version">—</strong></div>
+          <div><span>最近检查</span><strong id="guard-last-check">—</strong></div>
+          <div><span>连续故障</span><strong id="guard-failures">0</strong></div>
+          <div><span>定时调度</span><strong id="guard-schedule">—</strong></div>
+        </div>
+
+        <div class="guard-detail-grid">
+          <div class="guard-detail-block">
+            <p class="guard-label">优先线路顺序</p>
+            <ol class="node-order">
+              <li><span>主线路</span><strong id="guard-primary">—</strong></li>
+              <li><span>次线路</span><strong id="guard-secondary">—</strong></li>
+              <li><span>备用线</span><strong id="guard-backup">—</strong></li>
+            </ol>
+          </div>
+          <div class="guard-detail-block">
+            <p class="guard-label">最近服务探测</p>
+            <div class="probe-grid">
+              <div><span>OpenAI</span><strong id="guard-openai">—</strong></div>
+              <div><span>Claude</span><strong id="guard-anthropic">—</strong></div>
+              <div><span>GitHub</span><strong id="guard-github">—</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="guard-issue" class="guard-issue hidden"></div>
+        <div class="guard-actions">
+          <button class="button primary" data-guard-action="run">立即检查</button>
+          <button class="button secondary" data-guard-action="enable">启用定时</button>
+          <button class="button danger-outline" data-guard-action="disable">暂停定时</button>
+          <button class="button ghost" id="guard-refresh">刷新状态</button>
+        </div>
+
+        <details class="guard-log-details">
+          <summary>查看守护日志</summary>
+          <div id="guard-log-output" class="guard-log-output"><div class="muted">等待日志数据</div></div>
+        </details>
+      </section>
+
       <section class="panel console-panel">
         <div class="panel-heading console-heading">
           <div>

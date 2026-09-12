@@ -5,6 +5,7 @@ const state = {
   sessionService: "auto",
   logService: "all",
   busy: false,
+  guardBusy: false,
   visible: true,
   toastTimer: null,
 };
@@ -144,6 +145,8 @@ $("#password-form").addEventListener("submit", async (event) => {
 $("#refresh-button").addEventListener("click", refreshAll);
 
 $$('[data-action]').forEach((button) => button.addEventListener("click", () => runAction(button.dataset.action)));
+$$('[data-guard-action]').forEach((button) => button.addEventListener("click", () => runGuardAction(button.dataset.guardAction)));
+$("#guard-refresh").addEventListener("click", refreshNodeGuard);
 
 async function runAction(action) {
   if (state.busy) return;
@@ -174,6 +177,93 @@ async function runAction(action) {
 function setBusy(value) {
   state.busy = value;
   $$('[data-action]').forEach((button) => { button.disabled = value; });
+}
+
+async function runGuardAction(action) {
+  if (state.guardBusy) return;
+  const labels = { run: "立即检查", enable: "启用每 30 分钟检查", disable: "暂停定时检查" };
+  if (action === "disable" && !window.confirm("确认暂停节点定时检查？\n\n暂停后仍可在控制台手动立即检查。")) return;
+  setGuardBusy(true);
+  toast(`正在${labels[action]}…`);
+  try {
+    const result = await api("/api/node-guard/action", { method: "POST", body: JSON.stringify({ action }) });
+    renderNodeGuard(result.status);
+    toast(result.message || "操作完成");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    setGuardBusy(false);
+    await Promise.all([refreshNodeGuard(), refreshLogs()]);
+  }
+}
+
+function setGuardBusy(value) {
+  state.guardBusy = value;
+  $$('[data-guard-action]').forEach((button) => { button.disabled = value; });
+}
+
+async function refreshNodeGuard() {
+  try {
+    renderNodeGuard(await api("/api/node-guard"));
+  } catch (err) {
+    if (!err.message.includes("登录")) toast(`节点守护状态刷新失败：${err.message}`, true);
+  }
+}
+
+function renderNodeGuard(data) {
+  const statusMap = {
+    healthy: ["运行正常", "online"],
+    degraded: ["线路降级", "warning"],
+    attention: ["需要处理", "warning"],
+    unknown: ["等待首次检查", "offline"],
+    not_installed: ["尚未安装", "offline"],
+  };
+  const current = statusMap[data.status] || [data.status || "未知", "offline"];
+  $("#guard-state").textContent = current[0];
+  $("#guard-state").className = `status-pill ${current[1]}`;
+  $("#guard-running").textContent = data.running ? "检查中" : "空闲";
+  $("#guard-running").className = `status-pill ${data.running ? "warning" : "offline"}`;
+  $("#guard-version").textContent = data.version ? `v${data.version}` : data.installed ? "已安装" : "—";
+  $("#guard-last-check").textContent = data.last_check ? formatTime(data.last_check) : "尚未检查";
+  $("#guard-failures").textContent = data.consecutive_failures || 0;
+  $("#guard-schedule").textContent = data.cron_enabled
+    ? (data.scheduler_running ? "每 30 分钟 · 生效" : "已配置 · cron 异常")
+    : "已暂停";
+
+  const nodes = data.expected_nodes || {};
+  $("#guard-primary").textContent = nodes.primary || "—";
+  $("#guard-secondary").textContent = nodes.secondary || "—";
+  $("#guard-backup").textContent = nodes.backup || "—";
+  renderProbe("openai", data.checks && data.checks.openai);
+  renderProbe("anthropic", data.checks && data.checks.anthropic);
+  renderProbe("github", data.checks && data.checks.github);
+
+  const issue = $("#guard-issue");
+  const issueText = data.last_issue || data.message || "";
+  issue.textContent = issueText;
+  issue.classList.toggle("hidden", !issueText);
+
+  const logs = data.logs || [];
+  $("#guard-log-output").innerHTML = logs.length
+    ? logs.map((line) => `<div>${escapeHTML(line)}</div>`).join("")
+    : '<div class="muted">暂无守护日志；健康检查通常只更新状态文件。</div>';
+
+  const runButton = $('[data-guard-action="run"]');
+  runButton.disabled = state.guardBusy || data.running || !data.installed;
+  $('[data-guard-action="enable"]').disabled = state.guardBusy || data.cron_enabled || !data.installed;
+  $('[data-guard-action="disable"]').disabled = state.guardBusy || !data.cron_enabled;
+}
+
+function renderProbe(name, probe) {
+  const element = $(`#guard-${name}`);
+  if (!probe || !probe.successes) {
+    element.textContent = "未通过";
+    element.className = "probe-bad";
+    return;
+  }
+  const samples = Array.isArray(probe.samples_ms) ? probe.samples_ms.length : 0;
+  element.textContent = `${probe.median_ms || 0} ms · ${probe.successes}/${samples || probe.successes}`;
+  element.className = "probe-good";
 }
 
 async function refreshStatus() {
@@ -313,7 +403,7 @@ $("#diagnostics-button").addEventListener("click", async () => {
 });
 
 async function refreshAll() {
-  await Promise.all([refreshStatus(), refreshSessions(), refreshLogs()]);
+  await Promise.all([refreshStatus(), refreshNodeGuard(), refreshSessions(), refreshLogs()]);
 }
 
 function toast(message, isError = false) {
@@ -360,5 +450,6 @@ document.addEventListener("visibilitychange", () => {
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshStatus(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshSessions(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshLogs(); }, 5000);
+setInterval(() => { if (state.visible && state.csrf && !state.guardBusy) refreshNodeGuard(); }, 5000);
 
 restoreSession();

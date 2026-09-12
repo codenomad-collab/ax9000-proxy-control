@@ -1,6 +1,6 @@
 # AX9000 Proxy Control
 
-小米 AX9000 上的轻量 Web 控制台，用于安全地切换 ShellCrash/Mihomo 与雷神游戏加速插件，并查看实时网络会话、资源状态及故障日志。
+小米 AX9000 上的轻量 Web 控制台，用于安全地切换 ShellCrash/Mihomo 与雷神游戏加速插件，并管理 AI 美国线路守护、查看实时网络会话、资源状态及故障日志。
 
 > 当前版本针对一台已完成安全改造的 AX9000 构建，依赖现有的 `/usr/bin/router-proxy-mode` 互斥切换命令。它不是未经适配即可安装到任意 OpenWrt 路由器的通用插件。
 
@@ -15,6 +15,8 @@
 - 目标服务启动失败时自动恢复切换前模式。
 - 登录限流、内存会话、CSRF 校验、LAN 单地址监听。
 - 登录后可修改管理密码；保存成功后自动注销所有旧会话。
+- 集成 `ax9000-ai-node-guard` v1.0.0：展示健康状态、三条优先线路、OpenAI/Claude/GitHub 探测结果和最近日志。
+- 可从控制台立即执行线路检查，或启用、暂停路由器本机每 30 分钟调度。
 - 提供脱敏诊断信息复制功能。
 - procd 常驻和开机自启；程序放在 U 盘，内部闪存仅保存小型配置与启动器。
 - 前端完全离线，不加载 CDN、字体或第三方 JavaScript。
@@ -46,6 +48,8 @@ flowchart LR
     MihomoAPI --> Control
     Kernel --> Control
     Control --> Logs["审计日志 + logread"]
+    Control --> Guard["AI 节点守护 v1.0.0"]
+    Guard --> GuardState["状态文件 + cron + 守护日志"]
 ```
 
 控制台本身不重新实现服务切换逻辑，而是调用已经验证过的 `router-proxy-mode shellcrash|leigod|off`。所有写操作串行执行，并在完成后检查目标进程和互斥状态。
@@ -137,6 +141,10 @@ CONTROL_KEYCHAIN_SERVICE="ax9000-proxy-control-admin" \
 | `/data/router-proxy-web/config.json` | 监听地址、密码哈希和运行参数，权限 600 |
 | `/data/router-proxy-web/launcher.sh` | 等待 U 盘后启动主程序 |
 | `/etc/init.d/router-proxy-web` | procd 服务入口 |
+| `/extdisks/sda1/ShellClash/tools/ax9000-ai-node-guard` | AI 美国线路静态 ARM64 守护程序 |
+| `/extdisks/sda1/ShellClash/tools/ai-node-guard-state.json` | 守护状态与最近探测结果 |
+| `/extdisks/sda1/ShellClash/logs/ai-node-guard.log` | 守护运维日志 |
+| `/etc/crontabs/root` | 每 30 分钟守护调度 |
 
 ## 安全边界
 
@@ -196,5 +204,7 @@ router-proxy-mode off
 | `/api/logs` | GET | 审计及系统日志 |
 | `/api/diagnostics` | GET | 脱敏诊断快照 |
 | `/api/action` | POST | 启动、重启、切换或全部停止 |
+| `/api/node-guard` | GET | 守护运行、调度、节点、探测和日志状态 |
+| `/api/node-guard/action` | POST | 立即检查、启用或暂停定时调度 |
 
 除登录外，所有 API 都需要有效会话；写操作还需要 CSRF Token。
