@@ -2,6 +2,7 @@ const state = {
   csrf: "",
   status: null,
   metrics: null,
+  activeView: "overview",
   sessions: [],
   sessionService: "auto",
   logService: "all",
@@ -13,6 +14,44 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+const pageMeta = {
+  overview: ["COMMAND CENTER", "运行总览", "先确认当前代理模式和服务健康，再进入具体栏目处理问题。"],
+  resources: ["ROUTER HEALTH", "资源监控", "查看 CPU、内存、存储、有线协商状态和关键接口实时速率。"],
+  guard: ["AI ROUTE HEALTH", "节点守护", "管理 ChatGPT、Claude 与 GitHub 使用的优质美国线路。"],
+  sessions: ["TRAFFIC INSPECTOR", "网络会话", "核对设备、目标域名、命中规则和实际出口路径。"],
+  logs: ["OPERATIONS", "运行日志", "查看控制操作、服务运行和路由器故障信息。"],
+};
+
+function requestedView() {
+  const value = window.location.hash.replace(/^#\/?/, "");
+  return pageMeta[value] ? value : "overview";
+}
+
+function selectView(view, options = {}) {
+  const next = pageMeta[view] ? view : "overview";
+  const { updateHash = true, refresh = true } = options;
+  state.activeView = next;
+  $$('[data-page]').forEach((page) => page.classList.toggle("active", page.dataset.page === next));
+  $$('[data-nav-view]').forEach((button) => {
+    const active = button.dataset.navView === next;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  const meta = pageMeta[next];
+  $("#page-eyebrow").textContent = meta[0];
+  $("#page-title").textContent = meta[1];
+  $("#page-description").textContent = meta[2];
+  document.title = `${meta[1]} · AX9000 代理控制台`;
+  if (updateHash) window.history.replaceState(null, "", `#${next}`);
+  window.scrollTo({ top: 0, behavior: "auto" });
+  if (refresh && state.csrf) refreshActiveView();
+}
+
+$$('[data-nav-view]').forEach((button) => button.addEventListener("click", () => selectView(button.dataset.navView)));
+$$('[data-open-view]').forEach((button) => button.addEventListener("click", () => selectView(button.dataset.openView)));
+window.addEventListener("hashchange", () => selectView(requestedView(), { updateHash: false }));
 
 async function api(path, options = {}) {
   const headers = { Accept: "application/json", ...(options.headers || {}) };
@@ -42,6 +81,7 @@ function showApp() {
   $("#login-view").classList.add("hidden");
   $("#app-view").classList.remove("hidden");
   $("#login-message").textContent = "";
+  selectView(requestedView(), { updateHash: false, refresh: false });
 }
 
 async function restoreSession() {
@@ -194,7 +234,7 @@ async function runGuardAction(action) {
     toast(err.message, true);
   } finally {
     setGuardBusy(false);
-    await Promise.all([refreshNodeGuard(), refreshLogs()]);
+    await refreshNodeGuard();
   }
 }
 
@@ -230,6 +270,11 @@ function renderNodeGuard(data) {
   $("#guard-schedule").textContent = data.cron_enabled
     ? (data.scheduler_running ? "每 30 分钟 · 生效" : "已配置 · cron 异常")
     : "已暂停";
+
+  $("#overview-guard-summary").textContent = current[0];
+  $("#overview-guard-detail").innerHTML = data.last_check
+    ? `最近检查 ${escapeHTML(formatTime(data.last_check))} <b>→</b>`
+    : '查看优先线路 <b>→</b>';
 
   const nodes = data.expected_nodes || {};
   $("#guard-primary").textContent = nodes.primary || "—";
@@ -291,6 +336,8 @@ function renderStatus(data) {
   $("#mode-icon").textContent = current[2];
   $("#mode-badge").textContent = mode;
   $("#mode-badge").className = `badge ${current[3]}`;
+  $("#top-mode").className = `top-mode ${current[3]}`;
+  $("#top-mode span").textContent = `${current[0]} · ${data.shellcrash.healthy || data.leigod.healthy ? "运行正常" : mode === "off" ? "服务已停止" : "需要检查"}`;
 
   setServiceState("shellcrash", data.shellcrash.running, data.shellcrash.healthy);
   $("#shellcrash-processes").textContent = data.shellcrash.process_count;
@@ -306,6 +353,7 @@ function renderStatus(data) {
   $("#controller-memory").textContent = formatKiB(data.system.controller_rss_kib);
   $("#load-metric").textContent = `${data.system.load_1.toFixed(2)} / ${data.system.load_5.toFixed(2)}`;
   $("#uptime-metric").textContent = formatUptime(data.system.uptime_seconds);
+  $("#overview-resource-summary").textContent = `可用 ${formatKiB(data.system.mem_available_kib)} · 负载 ${data.system.load_1.toFixed(2)}`;
 }
 
 function setServiceState(name, running, healthy) {
@@ -344,6 +392,7 @@ function renderSystemMetrics(data) {
   $("#resource-memory").textContent = formatPercent(memory.usage_percent || 0);
   $("#resource-memory-detail").textContent = `已用 ${formatBytes(memory.used_bytes || 0)} · 可用 ${formatBytes(memory.available_bytes || 0)} · 共 ${formatBytes(memory.total_bytes || 0)}`;
   setUsageBar($("#resource-memory-bar"), memory.usage_percent || 0);
+  $("#overview-resource-summary").textContent = `${cpu.sample_ready ? `CPU ${formatPercent(cpu.usage_percent)}` : "CPU 采样中"} · 内存 ${formatPercent(memory.usage_percent || 0)}`;
 
   const storage = data.storage || [];
   const mounted = storage.filter((item) => item.mounted);
@@ -356,6 +405,16 @@ function renderSystemMetrics(data) {
       <div class="storage-value">${item.mounted ? `${formatBytes(item.used_bytes)} / ${formatBytes(item.total_bytes)} · ${formatPercent(percent)}` : "未挂载"}</div>
     </div>`;
   }).join("") : '<div class="resource-detail">未发现存储挂载点</div>';
+
+  const links = data.links || [];
+  $("#ethernet-link-list").innerHTML = links.length ? links.map((item) => {
+    const slow = item.up && item.speed_mbps > 0 && item.speed_mbps <= 100;
+    const duplex = item.duplex === "full" ? "全双工" : item.duplex === "half" ? "半双工" : "双工未知";
+    return `<div class="ethernet-link-card${item.up ? "" : " down"}${slow ? " slow" : ""}">
+      <div class="ethernet-link-name"><strong>${escapeHTML(item.label || item.name)}</strong><span>${escapeHTML(item.name)} · ${escapeHTML(item.role || "有线接口")}</span></div>
+      <div class="ethernet-link-state"><strong>${item.up && item.speed_mbps > 0 ? `${item.speed_mbps}M` : "未连接"}</strong><span>${item.up ? duplex : "无载波"}</span></div>
+    </div>`;
+  }).join("") : '<div class="network-empty muted">未发现有线互联接口</div>';
 
   const list = $("#network-interface-list");
   if (!interfaces.length) {
@@ -477,8 +536,28 @@ $("#diagnostics-button").addEventListener("click", async () => {
   }
 });
 
+async function refreshActiveView() {
+  switch (state.activeView) {
+    case "overview":
+      await Promise.all([refreshSystemMetrics(), refreshNodeGuard()]);
+      break;
+    case "resources":
+      await refreshSystemMetrics();
+      break;
+    case "guard":
+      await refreshNodeGuard();
+      break;
+    case "sessions":
+      await refreshSessions();
+      break;
+    case "logs":
+      await refreshLogs();
+      break;
+  }
+}
+
 async function refreshAll() {
-  await Promise.all([refreshStatus(), refreshSystemMetrics(), refreshNodeGuard(), refreshSessions(), refreshLogs()]);
+  await Promise.all([refreshStatus(), refreshActiveView()]);
 }
 
 function toast(message, isError = false) {
@@ -523,9 +602,9 @@ document.addEventListener("visibilitychange", () => {
 });
 
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshStatus(); }, 2000);
-setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshSystemMetrics(); }, 2000);
-setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshSessions(); }, 2000);
-setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshLogs(); }, 5000);
-setInterval(() => { if (state.visible && state.csrf && !state.guardBusy) refreshNodeGuard(); }, 5000);
+setInterval(() => { if (state.visible && state.csrf && !state.busy && ["overview", "resources"].includes(state.activeView)) refreshSystemMetrics(); }, 2000);
+setInterval(() => { if (state.visible && state.csrf && !state.busy && state.activeView === "sessions") refreshSessions(); }, 2000);
+setInterval(() => { if (state.visible && state.csrf && !state.busy && state.activeView === "logs") refreshLogs(); }, 5000);
+setInterval(() => { if (state.visible && state.csrf && !state.guardBusy && ["overview", "guard"].includes(state.activeView)) refreshNodeGuard(); }, 5000);
 
 restoreSession();

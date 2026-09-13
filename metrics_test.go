@@ -59,3 +59,36 @@ func TestMemoryAndFilesystemStats(t *testing.T) {
 		t.Fatalf("unexpected filesystem stats: %+v", storage)
 	}
 }
+
+func TestReadEthernetLinks(t *testing.T) {
+	root := t.TempDir()
+	writeLink := func(name, carrier, state, speed, duplex string) {
+		t.Helper()
+		base := filepath.Join(root, name)
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for file, value := range map[string]string{"carrier": carrier, "operstate": state, "speed": speed, "duplex": duplex} {
+			if err := os.WriteFile(filepath.Join(base, file), []byte(value+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	writeLink("eth4", "1", "up", "1000", "full")
+	writeLink("eth2", "1", "up", "100", "half")
+	writeLink("eth0", "0", "down", "10", "half")
+
+	links := readEthernetLinks(root)
+	if len(links) != 3 {
+		t.Fatalf("unexpected link count: %d", len(links))
+	}
+	if links[0].Name != "eth4" || !links[0].Up || links[0].SpeedMbps != 1000 || links[0].Duplex != "full" {
+		t.Fatalf("unexpected WAN link: %+v", links[0])
+	}
+	if links[1].Name != "eth2" || links[1].SpeedMbps != 100 || links[1].Duplex != "half" {
+		t.Fatalf("unexpected LAN link: %+v", links[1])
+	}
+	if links[2].Name != "eth0" || links[2].Up || links[2].SpeedMbps != 0 || links[2].Duplex != "" {
+		t.Fatalf("down link should not expose stale negotiation: %+v", links[2])
+	}
+}

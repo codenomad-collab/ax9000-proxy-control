@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,10 +50,20 @@ type InterfaceStats struct {
 	SampleReady      bool    `json:"sample_ready"`
 }
 
+type LinkStats struct {
+	Name      string `json:"name"`
+	Label     string `json:"label"`
+	Role      string `json:"role"`
+	Up        bool   `json:"up"`
+	SpeedMbps int    `json:"speed_mbps"`
+	Duplex    string `json:"duplex"`
+}
+
 type SystemMetricsResponse struct {
 	CPU        CPUStats         `json:"cpu"`
 	Memory     MemoryStats      `json:"memory"`
 	Storage    []StorageStats   `json:"storage"`
+	Links      []LinkStats      `json:"links"`
 	Interfaces []InterfaceStats `json:"interfaces"`
 	Timestamp  time.Time        `json:"timestamp"`
 }
@@ -104,6 +115,7 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 		},
 		Memory:    memoryStats(system),
 		Storage:   readStorageStats(),
+		Links:     readEthernetLinks("/sys/class/net"),
 		Timestamp: now,
 	}
 
@@ -141,6 +153,44 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 	}
 
 	return response
+}
+
+func readEthernetLinks(root string) []LinkStats {
+	targets := []LinkStats{
+		{Name: "eth4", Label: "WAN 上联", Role: "PPPoE 物理口"},
+		{Name: "eth2", Label: "LAN 端口 eth2", Role: "家庭 LAN"},
+		{Name: "eth3", Label: "LAN 端口 eth3", Role: "家庭 LAN"},
+		{Name: "eth0", Label: "聚合成员 eth0", Role: "bond0"},
+		{Name: "eth1", Label: "聚合成员 eth1", Role: "bond0"},
+		{Name: "bond0", Label: "LAN 聚合接口", Role: "逻辑聚合"},
+	}
+	result := make([]LinkStats, 0, len(targets))
+	for _, target := range targets {
+		base := filepath.Join(root, target.Name)
+		if info, err := os.Stat(base); err != nil || !info.IsDir() {
+			continue
+		}
+		carrier := strings.TrimSpace(readSmallFile(filepath.Join(base, "carrier")))
+		operState := strings.TrimSpace(readSmallFile(filepath.Join(base, "operstate")))
+		target.Up = carrier == "1" && operState != "down"
+		if target.Up {
+			target.SpeedMbps, _ = strconv.Atoi(strings.TrimSpace(readSmallFile(filepath.Join(base, "speed"))))
+			duplex := strings.ToLower(strings.TrimSpace(readSmallFile(filepath.Join(base, "duplex"))))
+			if duplex == "full" || duplex == "half" {
+				target.Duplex = duplex
+			}
+		}
+		result = append(result, target)
+	}
+	return result
+}
+
+func readSmallFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func memoryStats(system SystemState) MemoryStats {
