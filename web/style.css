@@ -334,6 +334,40 @@ input:focus { border-color: rgba(67,225,211,.7); box-shadow: 0 0 0 3px rgba(67,2
 .ethernet-link-card.slow .ethernet-link-state strong { color: var(--amber); }
 .ethernet-link-card.down .ethernet-link-state strong { color: var(--muted); }
 .ethernet-link-state span { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.mesh-monitor { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: radial-gradient(circle at 50% 0, rgba(78,154,255,.07), transparent 36%), rgba(2,10,13,.24); }
+.mesh-monitor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.mesh-monitor-head .guard-label { margin-bottom: 4px; }
+.mesh-monitor-head p:last-child { margin: 0; font-size: 11px; }
+.mesh-summary { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.mesh-summary span { color: var(--muted); font-size: 10px; }
+.mesh-summary strong { padding: 5px 9px; border: 1px solid rgba(121,184,255,.17); border-radius: 999px; color: #9ccaff; background: rgba(78,154,255,.08); font-size: 10px; }
+.mesh-topology { margin-top: 16px; }
+.mesh-node-card { position: relative; min-width: 0; padding: 12px; border: 1px solid rgba(98,227,157,.13); border-radius: 12px; background: rgba(255,255,255,.028); }
+.mesh-node-card.mesh-hub { width: min(340px,100%); margin: 0 auto; border-color: rgba(121,184,255,.2); background: rgba(78,154,255,.055); }
+.mesh-node-card.warning { border-color: rgba(255,189,89,.24); }
+.mesh-node-card.offline { opacity: .62; }
+.mesh-node-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.mesh-node-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px rgba(98,227,157,.4); }
+.mesh-hub .mesh-node-dot { background: #79b8ff; box-shadow: 0 0 10px rgba(121,184,255,.42); }
+.mesh-node-card.warning .mesh-node-dot { background: var(--amber); box-shadow: 0 0 10px rgba(255,189,89,.34); }
+.mesh-node-card.offline .mesh-node-dot { background: var(--muted); box-shadow: none; }
+.mesh-node-title div { min-width: 0; }
+.mesh-node-title strong, .mesh-node-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mesh-node-title strong { font-size: 12px; }
+.mesh-node-title small { margin-top: 3px; color: var(--muted-dim); font: 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.mesh-node-details { display: flex; align-items: center; gap: 8px; margin-top: 11px; color: var(--muted); font-size: 10px; }
+.mesh-backhaul { padding: 4px 7px; border-radius: 999px; color: #88d9c4; background: rgba(98,227,157,.08); }
+.mesh-backhaul.controller { color: #9ccaff; background: rgba(78,154,255,.1); }
+.mesh-backhaul.wireless { color: #d4b4ff; background: rgba(174,117,255,.1); }
+.mesh-backhaul.hybrid { color: var(--amber); background: rgba(255,189,89,.09); }
+.mesh-backhaul.unknown { color: var(--muted); background: rgba(255,255,255,.04); }
+.mesh-node-card > p { position: absolute; top: 12px; right: 12px; margin: 0; color: var(--green); font-size: 10px; }
+.mesh-node-card.offline > p { color: var(--muted); }
+.mesh-branch { position: relative; padding-top: 22px; }
+.mesh-branch::before { content: ""; position: absolute; top: 0; left: 50%; width: 1px; height: 22px; background: rgba(121,184,255,.2); }
+.mesh-child-grid { position: relative; display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 10px; }
+.mesh-update-state { margin: 12px 0 0; text-align: right; font-size: 10px; }
+.warning-text { color: var(--amber); }
 .network-monitor { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2,10,13,.24); }
 .network-monitor-head { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
 .network-monitor-head .guard-label { margin-bottom: 4px; }
@@ -486,8 +520,13 @@ tr:hover td { background: rgba(255,255,255,.018); }
   .service-actions, .mode-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .resource-summary-grid { display: grid; }
   .storage-card { grid-column: auto; }
-  .resource-heading, .guard-heading, .link-monitor-head, .network-monitor-head { align-items: stretch; flex-direction: column; }
+  .resource-heading, .guard-heading, .link-monitor-head, .mesh-monitor-head, .network-monitor-head { align-items: stretch; flex-direction: column; }
   .ethernet-link-list { grid-template-columns: 1fr; }
+  .mesh-summary { justify-content: space-between; }
+  .mesh-branch { padding-top: 12px; }
+  .mesh-branch::before { display: none; }
+  .mesh-child-grid { grid-template-columns: 1fr; }
+  .mesh-node-card.mesh-hub { width: 100%; }
   .guard-heading-actions { margin-left: 56px; }
   .storage-row { grid-template-columns: 1fr auto; }
   .storage-bar { grid-column: 1 / -1; grid-row: 2; }

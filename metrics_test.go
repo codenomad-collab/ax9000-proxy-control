@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestReadCPUCountersAndUsage(t *testing.T) {
@@ -90,5 +91,47 @@ func TestReadEthernetLinks(t *testing.T) {
 	}
 	if links[2].Name != "eth0" || links[2].Up || links[2].SpeedMbps != 0 || links[2].Duplex != "" {
 		t.Fatalf("down link should not expose stale negotiation: %+v", links[2])
+	}
+}
+
+func TestReadMeshStats(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "xiaoqiang")
+	nodesPath := filepath.Join(dir, "xq_whc_quire")
+	config := "config common 'common'\n\toption NETMODE 'whc_cap'\n\toption MESH_VERSION '2'\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nodes := `{"backhauls":"2","backhauls_qa":"2","locale":"节点甲","initted":"1","return":"success","ip":"192.0.2.10"}
+{"backhauls":"8","backhauls_qa":"0","locale":"节点乙","initted":"1","return":"success","ip":"192.0.2.11"}
+invalid line
+`
+	if err := os.WriteFile(nodesPath, []byte(nodes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 13, 20, 0, 0, 0, time.Local)
+	updatedAt := now.Add(-90 * time.Second)
+	if err := os.Chtimes(nodesPath, updatedAt, updatedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	stats := readMeshStats(configPath, nodesPath, now)
+	if !stats.Enabled || stats.Role != "cap" || stats.Version != "2" || !stats.Fresh || stats.NodeCount != 3 {
+		t.Fatalf("unexpected mesh summary: %+v", stats)
+	}
+	if len(stats.Nodes) != 2 || stats.Nodes[0].Backhaul != "5ghz" || stats.Nodes[0].Quality != "good" || !stats.Nodes[0].Online {
+		t.Fatalf("unexpected wireless node: %+v", stats.Nodes)
+	}
+	if stats.Nodes[1].Backhaul != "ethernet" || stats.Nodes[1].Quality != "poor" {
+		t.Fatalf("unexpected wired node: %+v", stats.Nodes[1])
+	}
+
+	staleAt := now.Add(-10 * time.Minute)
+	if err := os.Chtimes(nodesPath, staleAt, staleAt); err != nil {
+		t.Fatal(err)
+	}
+	stale := readMeshStats(configPath, nodesPath, now)
+	if stale.Fresh || stale.Nodes[0].Online {
+		t.Fatalf("stale topology should not report online nodes: %+v", stale)
 	}
 }

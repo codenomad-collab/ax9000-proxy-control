@@ -10,6 +10,7 @@
 - 强制保持两套 TUN/iptables 服务互斥，避免双重接管。
 - 每 2 秒刷新服务状态、CPU、内存、存储、关键接口速率和活动网络会话。
 - 独立资源监控栏目展示 `/data`、ShellCrash 外接盘，以及 WAN、LAN、代理隧道和无线接口的实时收发速率与累计流量。
+- 自动读取小米 Mesh v2 拓扑缓存，展示主从角色、节点位置、管理地址、有线/无线回程及链路质量。
 - 桌面端左侧导航与手机端横向栏目将总览、资源、节点守护、会话和日志分开，只轮询当前所需数据。
 - 有线互联接口展示链路状态、100M/1000M 等协商速率及半双工/全双工模式，100M 活跃链路会醒目标记。
 - ShellCrash 会话来自 Mihomo Controller API。
@@ -51,7 +52,7 @@ flowchart LR
     MihomoAPI --> Control
     Kernel --> Control
     Control --> Logs["审计日志 + logread"]
-    Control --> Metrics["CPU / 内存 / 存储 / 接口速率"]
+    Control --> Metrics["CPU / 内存 / 存储 / 接口速率 / Mesh 拓扑"]
     Control --> Guard["AI 节点守护 v1.0.0"]
     Guard --> GuardState["状态文件 + cron + 守护日志"]
 ```

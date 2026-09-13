@@ -173,7 +173,7 @@
                 <div>
                   <p class="eyebrow">ROUTER RESOURCE MONITOR · LIVE</p>
                   <h2>资源状态</h2>
-                  <p class="muted resource-description">CPU、内存、存储与关键网络接口每 2 秒更新。</p>
+                  <p class="muted resource-description">CPU、内存、存储、Mesh 拓扑与关键网络接口每 2 秒更新。</p>
                 </div>
               </div>
               <span id="resource-sample-state" class="status-pill offline">等待采样</span>
@@ -205,6 +205,22 @@
               <div id="ethernet-link-list" class="ethernet-link-list">
                 <div class="network-empty muted">正在读取端口协商状态</div>
               </div>
+            </div>
+            <div class="mesh-monitor">
+              <div class="mesh-monitor-head">
+                <div>
+                  <p class="guard-label">Mesh 网络拓扑</p>
+                  <p class="muted">读取小米 Mesh 主从角色、节点位置、回程类型和链路质量。</p>
+                </div>
+                <div class="mesh-summary">
+                  <span id="mesh-version">版本读取中</span>
+                  <strong id="mesh-node-count">—</strong>
+                </div>
+              </div>
+              <div id="mesh-topology" class="mesh-topology">
+                <div class="network-empty muted">正在读取 Mesh 拓扑</div>
+              </div>
+              <p id="mesh-update-state" class="mesh-update-state muted">等待拓扑数据</p>
             </div>
             <div class="network-monitor">
               <div class="network-monitor-head">

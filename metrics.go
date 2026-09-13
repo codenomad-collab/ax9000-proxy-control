@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -59,11 +60,30 @@ type LinkStats struct {
 	Duplex    string `json:"duplex"`
 }
 
+type MeshNodeStats struct {
+	Name     string `json:"name"`
+	IP       string `json:"ip"`
+	Backhaul string `json:"backhaul"`
+	Quality  string `json:"quality"`
+	Online   bool   `json:"online"`
+}
+
+type MeshStats struct {
+	Enabled       bool            `json:"enabled"`
+	Role          string          `json:"role"`
+	Version       string          `json:"version"`
+	Fresh         bool            `json:"fresh"`
+	NodeCount     int             `json:"node_count"`
+	UpdatedAtUnix int64           `json:"updated_at_unix"`
+	Nodes         []MeshNodeStats `json:"nodes"`
+}
+
 type SystemMetricsResponse struct {
 	CPU        CPUStats         `json:"cpu"`
 	Memory     MemoryStats      `json:"memory"`
 	Storage    []StorageStats   `json:"storage"`
 	Links      []LinkStats      `json:"links"`
+	Mesh       MeshStats        `json:"mesh"`
 	Interfaces []InterfaceStats `json:"interfaces"`
 	Timestamp  time.Time        `json:"timestamp"`
 }
@@ -116,6 +136,7 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 		Memory:    memoryStats(system),
 		Storage:   readStorageStats(),
 		Links:     readEthernetLinks("/sys/class/net"),
+		Mesh:      readMeshStats("/etc/config/xiaoqiang", "/tmp/xq_whc_quire", now),
 		Timestamp: now,
 	}
 
@@ -191,6 +212,119 @@ func readSmallFile(path string) string {
 		return ""
 	}
 	return string(data)
+}
+
+func readMeshStats(configPath, nodesPath string, now time.Time) MeshStats {
+	options := readUCIOptions(configPath)
+	stats := MeshStats{
+		Version: options["MESH_VERSION"],
+		Nodes:   []MeshNodeStats{},
+	}
+	switch options["NETMODE"] {
+	case "whc_cap":
+		stats.Enabled = true
+		stats.Role = "cap"
+	case "whc_re":
+		stats.Enabled = true
+		stats.Role = "re"
+	}
+
+	if info, err := os.Stat(nodesPath); err == nil {
+		stats.UpdatedAtUnix = info.ModTime().Unix()
+		age := now.Sub(info.ModTime())
+		stats.Fresh = age >= -time.Minute && age <= 5*time.Minute
+	}
+
+	file, err := os.Open(nodesPath)
+	if err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			var record struct {
+				Backhauls   string `json:"backhauls"`
+				BackhaulsQA string `json:"backhauls_qa"`
+				Locale      string `json:"locale"`
+				Initted     string `json:"initted"`
+				Result      string `json:"return"`
+				IP          string `json:"ip"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &record) != nil || record.Result != "success" {
+				continue
+			}
+			backhaulMask, _ := strconv.Atoi(record.Backhauls)
+			qualityMask, _ := strconv.Atoi(record.BackhaulsQA)
+			name := strings.TrimSpace(record.Locale)
+			if name == "" {
+				name = "Mesh 子节点 " + strconv.Itoa(len(stats.Nodes)+1)
+			}
+			stats.Nodes = append(stats.Nodes, MeshNodeStats{
+				Name:     name,
+				IP:       strings.TrimSpace(record.IP),
+				Backhaul: decodeMeshBackhaul(backhaulMask),
+				Quality:  decodeMeshQuality(backhaulMask, qualityMask),
+				Online:   record.Initted == "1" && stats.Fresh,
+			})
+		}
+	}
+	if len(stats.Nodes) > 0 {
+		stats.Enabled = true
+	}
+	if stats.Enabled {
+		stats.NodeCount = len(stats.Nodes) + 1
+	}
+	return stats
+}
+
+func readUCIOptions(path string) map[string]string {
+	result := map[string]string{}
+	file, err := os.Open(path)
+	if err != nil {
+		return result
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 || fields[0] != "option" {
+			continue
+		}
+		result[fields[1]] = strings.Trim(strings.Join(fields[2:], " "), "'\"")
+	}
+	return result
+}
+
+func decodeMeshBackhaul(mask int) string {
+	links := make([]string, 0, 3)
+	if mask&8 != 0 {
+		links = append(links, "ethernet")
+	}
+	if mask&2 != 0 {
+		links = append(links, "5ghz")
+	}
+	if mask&1 != 0 {
+		links = append(links, "2.4ghz")
+	}
+	if len(links) == 0 {
+		return "unknown"
+	}
+	if len(links) > 1 {
+		return "hybrid"
+	}
+	return links[0]
+}
+
+func decodeMeshQuality(backhaulMask, qualityMask int) string {
+	if backhaulMask == 0 {
+		return "unknown"
+	}
+	matched := backhaulMask & qualityMask
+	if matched == backhaulMask {
+		return "good"
+	}
+	if matched != 0 {
+		return "mixed"
+	}
+	return "poor"
 }
 
 func memoryStats(system SystemState) MemoryStats {

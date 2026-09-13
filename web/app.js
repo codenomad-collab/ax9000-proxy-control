@@ -17,7 +17,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const pageMeta = {
   overview: ["COMMAND CENTER", "运行总览", "先确认当前代理模式和服务健康，再进入具体栏目处理问题。"],
-  resources: ["ROUTER HEALTH", "资源监控", "查看 CPU、内存、存储、有线协商状态和关键接口实时速率。"],
+  resources: ["ROUTER HEALTH", "资源监控", "查看 CPU、内存、存储、Mesh 拓扑、有线协商状态和关键接口实时速率。"],
   guard: ["AI ROUTE HEALTH", "节点守护", "管理 ChatGPT、Claude 与 GitHub 使用的优质美国线路。"],
   sessions: ["TRAFFIC INSPECTOR", "网络会话", "核对设备、目标域名、命中规则和实际出口路径。"],
   logs: ["OPERATIONS", "运行日志", "查看控制操作、服务运行和路由器故障信息。"],
@@ -416,6 +416,8 @@ function renderSystemMetrics(data) {
     </div>`;
   }).join("") : '<div class="network-empty muted">未发现有线互联接口</div>';
 
+  renderMeshTopology(data.mesh || {});
+
   const list = $("#network-interface-list");
   if (!interfaces.length) {
     list.innerHTML = '<div class="network-empty muted">未发现关键网络接口</div>';
@@ -430,6 +432,63 @@ function renderSystemMetrics(data) {
     <div class="network-rate upload"><span>发送 TX</span><strong>${item.sample_ready ? formatRate(item.tx_bytes_per_second) : "采样中"}</strong></div>
     <div class="network-total"><span>累计接收 ${formatBytes(item.rx_bytes || 0)}</span><span>累计发送 ${formatBytes(item.tx_bytes || 0)}</span></div>
   </div>`).join("");
+}
+
+function renderMeshTopology(mesh) {
+  const enabled = Boolean(mesh.enabled);
+  const roleLabel = mesh.role === "cap" ? "主路由 CAP" : mesh.role === "re" ? "子节点 RE" : "角色未知";
+  $("#mesh-version").textContent = enabled ? `Mesh v${mesh.version || "?"} · ${roleLabel}` : "Mesh 未启用";
+  $("#mesh-node-count").textContent = enabled ? `${mesh.node_count || 1} 个节点` : "—";
+
+  const topology = $("#mesh-topology");
+  if (!enabled) {
+    topology.innerHTML = '<div class="network-empty muted">当前路由器未启用 Mesh 组网</div>';
+    $("#mesh-update-state").textContent = "未发现 Mesh 拓扑数据";
+    return;
+  }
+
+  const nodes = mesh.nodes || [];
+  const childNodes = nodes.length ? nodes.map((node) => {
+    const backhaulMap = {
+      ethernet: ["有线回程", "wired"],
+      "5ghz": ["5GHz 无线回程", "wireless"],
+      "2.4ghz": ["2.4GHz 无线回程", "wireless"],
+      hybrid: ["混合回程", "hybrid"],
+      unknown: ["回程未知", "unknown"],
+    };
+    const qualityMap = {
+      good: "链路良好",
+      mixed: "部分链路良好",
+      poor: "链路较弱",
+      unknown: "质量未知",
+    };
+    const backhaul = backhaulMap[node.backhaul] || backhaulMap.unknown;
+    const stateClass = !node.online ? " offline" : node.quality === "poor" ? " warning" : "";
+    return `<article class="mesh-node-card${stateClass}">
+      <div class="mesh-node-title"><span class="mesh-node-dot"></span><div><strong>${escapeHTML(node.name || "Mesh 子节点")}</strong><small>${escapeHTML(node.ip || "地址未知")}</small></div></div>
+      <div class="mesh-node-details"><span class="mesh-backhaul ${backhaul[1]}">${backhaul[0]}</span><span>${qualityMap[node.quality] || qualityMap.unknown}</span></div>
+      <p>${node.online ? "在线" : "状态待确认"}</p>
+    </article>`;
+  }).join("") : '<div class="network-empty muted">主路由已启用 Mesh，暂未读取到子节点</div>';
+
+  topology.innerHTML = `<article class="mesh-node-card mesh-hub">
+    <div class="mesh-node-title"><span class="mesh-node-dot"></span><div><strong>AX9000 主路由</strong><small>${roleLabel}</small></div></div>
+    <div class="mesh-node-details"><span class="mesh-backhaul controller">拓扑控制器</span><span>本机</span></div>
+    <p>在线</p>
+  </article><div class="mesh-branch"><span></span><div class="mesh-child-grid">${childNodes}</div></div>`;
+
+  const updatedText = formatMeshUpdatedAt(mesh.updated_at_unix);
+  $("#mesh-update-state").textContent = mesh.fresh ? `拓扑数据正常 · ${updatedText}` : `拓扑缓存可能已过期 · ${updatedText}`;
+  $("#mesh-update-state").className = `mesh-update-state ${mesh.fresh ? "muted" : "warning-text"}`;
+}
+
+function formatMeshUpdatedAt(value) {
+  const updatedAt = Number(value || 0);
+  if (!updatedAt) return "更新时间未知";
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - updatedAt));
+  if (seconds < 60) return "刚刚更新";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前更新`;
+  return `${Math.floor(seconds / 3600)} 小时前更新`;
 }
 
 function setUsageBar(element, value) {
