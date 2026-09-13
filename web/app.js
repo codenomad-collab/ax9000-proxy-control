@@ -1,6 +1,7 @@
 const state = {
   csrf: "",
   status: null,
+  metrics: null,
   sessions: [],
   sessionService: "auto",
   logService: "all",
@@ -314,6 +315,80 @@ function setServiceState(name, running, healthy) {
   $(`#${name}-card`).classList.toggle("active-service", running);
 }
 
+async function refreshSystemMetrics() {
+  try {
+    const data = await api("/api/system-metrics");
+    state.metrics = data;
+    renderSystemMetrics(data);
+  } catch (err) {
+    const sampleState = $("#resource-sample-state");
+    sampleState.textContent = "读取失败";
+    sampleState.className = "status-pill warning";
+    if (!err.message.includes("登录")) toast(`资源监控刷新失败：${err.message}`, true);
+  }
+}
+
+function renderSystemMetrics(data) {
+  const cpu = data.cpu || {};
+  const memory = data.memory || {};
+  const interfaces = data.interfaces || [];
+  const sampleReady = Boolean(cpu.sample_ready) && interfaces.some((item) => item.sample_ready);
+  const sampleState = $("#resource-sample-state");
+  sampleState.textContent = sampleReady ? "实时监控" : "建立基线";
+  sampleState.className = `status-pill ${sampleReady ? "online" : "offline"}`;
+
+  $("#resource-cpu").textContent = cpu.sample_ready ? formatPercent(cpu.usage_percent) : "采样中";
+  $("#resource-cpu-detail").textContent = `${cpu.cores || 0} 核 · 负载 ${Number(cpu.load_1 || 0).toFixed(2)} / ${Number(cpu.load_5 || 0).toFixed(2)} / ${Number(cpu.load_15 || 0).toFixed(2)}`;
+  setUsageBar($("#resource-cpu-bar"), cpu.sample_ready ? cpu.usage_percent : 0);
+
+  $("#resource-memory").textContent = formatPercent(memory.usage_percent || 0);
+  $("#resource-memory-detail").textContent = `已用 ${formatBytes(memory.used_bytes || 0)} · 可用 ${formatBytes(memory.available_bytes || 0)} · 共 ${formatBytes(memory.total_bytes || 0)}`;
+  setUsageBar($("#resource-memory-bar"), memory.usage_percent || 0);
+
+  const storage = data.storage || [];
+  const mounted = storage.filter((item) => item.mounted);
+  $("#resource-storage-summary").textContent = mounted.length === storage.length ? `${mounted.length} 个挂载点正常` : `${mounted.length}/${storage.length} 正常`;
+  $("#resource-storage-list").innerHTML = storage.length ? storage.map((item) => {
+    const percent = Number(item.usage_percent || 0);
+    return `<div class="storage-row">
+      <div class="storage-name"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.path)}</span></div>
+      <div class="storage-bar"><span class="${usageClass(percent)}" style="width:${item.mounted ? clampPercent(percent) : 0}%"></span></div>
+      <div class="storage-value">${item.mounted ? `${formatBytes(item.used_bytes)} / ${formatBytes(item.total_bytes)} · ${formatPercent(percent)}` : "未挂载"}</div>
+    </div>`;
+  }).join("") : '<div class="resource-detail">未发现存储挂载点</div>';
+
+  const list = $("#network-interface-list");
+  if (!interfaces.length) {
+    list.innerHTML = '<div class="network-empty muted">未发现关键网络接口</div>';
+    return;
+  }
+  list.innerHTML = interfaces.map((item) => `<div class="network-interface-row">
+    <div class="network-interface-name">
+      <span class="interface-state ${item.up ? "up" : ""}"></span>
+      <div><strong>${escapeHTML(item.label || item.name)}</strong><span>${escapeHTML(item.name)}</span></div>
+    </div>
+    <div class="network-rate download"><span>接收 RX</span><strong>${item.sample_ready ? formatRate(item.rx_bytes_per_second) : "采样中"}</strong></div>
+    <div class="network-rate upload"><span>发送 TX</span><strong>${item.sample_ready ? formatRate(item.tx_bytes_per_second) : "采样中"}</strong></div>
+    <div class="network-total"><span>累计接收 ${formatBytes(item.rx_bytes || 0)}</span><span>累计发送 ${formatBytes(item.tx_bytes || 0)}</span></div>
+  </div>`).join("");
+}
+
+function setUsageBar(element, value) {
+  const percent = clampPercent(Number(value || 0));
+  element.style.width = `${percent}%`;
+  element.className = usageClass(percent);
+}
+
+function usageClass(percent) {
+  if (percent >= 90) return "critical";
+  if (percent >= 75) return "warning";
+  return "";
+}
+
+function clampPercent(value) { return Math.max(0, Math.min(100, Number(value) || 0)); }
+function formatPercent(value) { return `${clampPercent(value).toFixed(1)}%`; }
+function formatRate(value) { return `${formatBytes(value || 0)}/s`; }
+
 async function refreshSessions() {
   try {
     const data = await api(`/api/sessions?service=${encodeURIComponent(state.sessionService)}`);
@@ -403,7 +478,7 @@ $("#diagnostics-button").addEventListener("click", async () => {
 });
 
 async function refreshAll() {
-  await Promise.all([refreshStatus(), refreshNodeGuard(), refreshSessions(), refreshLogs()]);
+  await Promise.all([refreshStatus(), refreshSystemMetrics(), refreshNodeGuard(), refreshSessions(), refreshLogs()]);
 }
 
 function toast(message, isError = false) {
@@ -448,6 +523,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshStatus(); }, 2000);
+setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshSystemMetrics(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshSessions(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshLogs(); }, 5000);
 setInterval(() => { if (state.visible && state.csrf && !state.guardBusy) refreshNodeGuard(); }, 5000);

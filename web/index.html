@@ -117,6 +117,63 @@
         </article>
       </section>
 
+      <section class="panel resource-panel">
+        <div class="panel-heading resource-heading">
+          <div class="service-head">
+            <div class="service-symbol resource-symbol">R</div>
+            <div>
+              <p class="eyebrow">ROUTER RESOURCE MONITOR · LIVE</p>
+              <h2>路由器资源监控</h2>
+              <p class="muted resource-description">CPU、内存、存储与关键网络接口每 2 秒更新。</p>
+            </div>
+          </div>
+          <span id="resource-sample-state" class="status-pill offline">等待采样</span>
+        </div>
+
+        <div class="resource-summary-grid">
+          <article class="resource-card">
+            <div class="resource-card-head">
+              <span>CPU 使用率</span>
+              <strong id="resource-cpu">—</strong>
+            </div>
+            <div class="usage-track"><span id="resource-cpu-bar"></span></div>
+            <p id="resource-cpu-detail" class="resource-detail">正在读取处理器状态</p>
+          </article>
+
+          <article class="resource-card">
+            <div class="resource-card-head">
+              <span>内存占用</span>
+              <strong id="resource-memory">—</strong>
+            </div>
+            <div class="usage-track"><span id="resource-memory-bar"></span></div>
+            <p id="resource-memory-detail" class="resource-detail">正在读取可用内存</p>
+          </article>
+
+          <article class="resource-card storage-card">
+            <div class="resource-card-head">
+              <span>存储空间</span>
+              <strong id="resource-storage-summary">—</strong>
+            </div>
+            <div id="resource-storage-list" class="storage-list">
+              <div class="resource-detail">正在读取挂载点</div>
+            </div>
+          </article>
+        </div>
+
+        <div class="network-monitor">
+          <div class="network-monitor-head">
+            <div>
+              <p class="guard-label">关键网络接口实时速率</p>
+              <p class="muted">速率与累计流量均来自路由器接口计数器，每 2 秒刷新。</p>
+            </div>
+            <div class="network-legend"><span class="download-dot"></span>接收 RX <span class="upload-dot"></span>发送 TX</div>
+          </div>
+          <div id="network-interface-list" class="network-interface-list">
+            <div class="network-empty muted">等待第一次网络采样</div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel guard-panel">
         <div class="panel-heading guard-heading">
           <div class="service-head">

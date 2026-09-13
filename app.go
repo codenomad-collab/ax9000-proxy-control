@@ -24,6 +24,7 @@ type App struct {
 	targets      []netip.Prefix
 	targetAt     time.Time
 	startedAt    time.Time
+	metrics      systemMetricsSampler
 	last         actionRecord
 }
 
@@ -83,6 +84,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/logout", a.requireAuth(a.handleLogout))
 	mux.HandleFunc("/api/password", a.requireAuth(a.handlePasswordChange))
 	mux.HandleFunc("/api/status", a.requireAuth(a.handleStatus))
+	mux.HandleFunc("/api/system-metrics", a.requireAuth(a.handleSystemMetrics))
 	mux.HandleFunc("/api/sessions", a.requireAuth(a.handleSessions))
 	mux.HandleFunc("/api/logs", a.requireAuth(a.handleLogs))
 	mux.HandleFunc("/api/diagnostics", a.requireAuth(a.handleDiagnostics))

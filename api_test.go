@@ -45,6 +45,15 @@ func TestLoginAndAuthenticatedStatus(t *testing.T) {
 	if statusResponse.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status response: %d", statusResponse.StatusCode)
 	}
+
+	metricsResponse, err := client.Get(server.URL + "/api/system-metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metricsResponse.Body.Close()
+	if metricsResponse.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected metrics response: %d", metricsResponse.StatusCode)
+	}
 }
 
 func TestFailedLogin(t *testing.T) {

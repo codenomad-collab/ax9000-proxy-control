@@ -116,6 +116,14 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.currentStatus())
 }
 
+func (a *App) handleSystemMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "只支持 GET")
+		return
+	}
+	writeJSON(w, http.StatusOK, a.systemMetrics())
+}
+
 func (a *App) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "只支持 GET")

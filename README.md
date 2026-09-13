@@ -8,7 +8,8 @@
 
 - 手动启动、停止、重启和切换 ShellCrash、雷神服务。
 - 强制保持两套 TUN/iptables 服务互斥，避免双重接管。
-- 每 2 秒刷新服务状态、内存、负载和活动网络会话。
+- 每 2 秒刷新服务状态、CPU、内存、存储、关键接口速率和活动网络会话。
+- 独立资源监控栏目展示 `/data`、ShellCrash 外接盘，以及 WAN、LAN、代理隧道和无线接口的实时收发速率与累计流量。
 - ShellCrash 会话来自 Mihomo Controller API。
 - 雷神会话来自 `target_Game` 设备集合与 Linux conntrack。
 - 操作审计和路由器系统日志集中展示，敏感字段自动脱敏。
@@ -48,6 +49,7 @@ flowchart LR
     MihomoAPI --> Control
     Kernel --> Control
     Control --> Logs["审计日志 + logread"]
+    Control --> Metrics["CPU / 内存 / 存储 / 接口速率"]
     Control --> Guard["AI 节点守护 v1.0.0"]
     Guard --> GuardState["状态文件 + cron + 守护日志"]
 ```
@@ -200,6 +202,7 @@ router-proxy-mode off
 | `/api/login` | POST | 控制台登录 |
 | `/api/password` | POST | 校验当前密码并修改管理密码 |
 | `/api/status` | GET | 模式、进程、TUN、内存和负载 |
+| `/api/system-metrics` | GET | CPU、内存、存储和关键网络接口实时指标 |
 | `/api/sessions` | GET | ShellCrash 或雷神实时会话 |
 | `/api/logs` | GET | 审计及系统日志 |
 | `/api/diagnostics` | GET | 脱敏诊断快照 |
