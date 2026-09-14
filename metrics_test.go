@@ -92,6 +92,28 @@ func TestReadEthernetLinks(t *testing.T) {
 	if links[2].Name != "eth0" || links[2].Up || links[2].SpeedMbps != 0 || links[2].Duplex != "" {
 		t.Fatalf("down link should not expose stale negotiation: %+v", links[2])
 	}
+	if links[2].Label != "LAN 端口 eth0" || links[2].Role != "独立 LAN" {
+		t.Fatalf("unbonded port should be labeled as independent LAN: %+v", links[2])
+	}
+
+	writeLink("eth1", "1", "up", "1000", "full")
+	writeLink("bond0", "1", "up", "1000", "full")
+	for _, name := range []string{"eth0", "eth1"} {
+		if err := os.Symlink("../bond0", filepath.Join(root, name, "master")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bonded := readEthernetLinks(root)
+	byName := make(map[string]LinkStats, len(bonded))
+	for _, link := range bonded {
+		byName[link.Name] = link
+	}
+	if byName["eth0"].Label != "聚合成员 eth0" || byName["eth0"].Role != "bond0" {
+		t.Fatalf("bond member was not detected: %+v", byName["eth0"])
+	}
+	if byName["bond0"].Label != "LAN 聚合接口" {
+		t.Fatalf("bond interface was not included: %+v", byName["bond0"])
+	}
 }
 
 func TestReadMeshStats(t *testing.T) {

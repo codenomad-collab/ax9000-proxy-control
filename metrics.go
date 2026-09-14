@@ -181,9 +181,17 @@ func readEthernetLinks(root string) []LinkStats {
 		{Name: "eth4", Label: "WAN 上联", Role: "PPPoE 物理口"},
 		{Name: "eth2", Label: "LAN 端口 eth2", Role: "家庭 LAN"},
 		{Name: "eth3", Label: "LAN 端口 eth3", Role: "家庭 LAN"},
-		{Name: "eth0", Label: "聚合成员 eth0", Role: "bond0"},
-		{Name: "eth1", Label: "聚合成员 eth1", Role: "bond0"},
-		{Name: "bond0", Label: "LAN 聚合接口", Role: "逻辑聚合"},
+	}
+	for _, name := range []string{"eth0", "eth1"} {
+		master := interfaceMaster(root, name)
+		if strings.HasPrefix(master, "bond") {
+			targets = append(targets, LinkStats{Name: name, Label: "聚合成员 " + name, Role: master})
+		} else {
+			targets = append(targets, LinkStats{Name: name, Label: "LAN 端口 " + name, Role: "独立 LAN"})
+		}
+	}
+	if info, err := os.Stat(filepath.Join(root, "bond0")); err == nil && info.IsDir() {
+		targets = append(targets, LinkStats{Name: "bond0", Label: "LAN 聚合接口", Role: "逻辑聚合"})
 	}
 	result := make([]LinkStats, 0, len(targets))
 	for _, target := range targets {
@@ -204,6 +212,14 @@ func readEthernetLinks(root string) []LinkStats {
 		result = append(result, target)
 	}
 	return result
+}
+
+func interfaceMaster(root, name string) string {
+	target, err := os.Readlink(filepath.Join(root, name, "master"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(target)
 }
 
 func readSmallFile(path string) string {
