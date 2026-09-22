@@ -20,6 +20,7 @@ type Config struct {
 	ConntrackPaths        []string `json:"conntrack_paths"`
 	IPSetCommand          string   `json:"ipset_command"`
 	LogreadCommand        string   `json:"logread_command"`
+	LeiGodUpdateCommand   string   `json:"leigod_update_command"`
 	NodeGuardCommand      string   `json:"node_guard_command"`
 	NodeGuardStatePath    string   `json:"node_guard_state_path"`
 	NodeGuardLogPath      string   `json:"node_guard_log_path"`
@@ -50,19 +51,20 @@ func defaultConfig() Config {
 			"/proc/net/nf_conntrack",
 			"/proc/net/ip_conntrack",
 		},
-		IPSetCommand:       "/usr/sbin/ipset",
-		LogreadCommand:     "/sbin/logread",
-		NodeGuardCommand:   "",
-		NodeGuardStatePath: "",
-		NodeGuardLogPath:   "",
-		NodeGuardCronPath:  "/etc/crontabs/root",
-		NetworkConfigPath:  "/etc/config/network",
-		MeshConfigPath:     "/etc/config/xiaoqiang",
-		MeshNodesPath:      "",
-		SessionTTLMinutes:  720,
-		MaxSessions:        300,
-		MaxLogLines:        250,
-		AutoRollback:       true,
+		IPSetCommand:        "/usr/sbin/ipset",
+		LogreadCommand:      "/sbin/logread",
+		LeiGodUpdateCommand: "/userdisk/appdata/leigod/manual_update.sh",
+		NodeGuardCommand:    "",
+		NodeGuardStatePath:  "",
+		NodeGuardLogPath:    "",
+		NodeGuardCronPath:   "/etc/crontabs/root",
+		NetworkConfigPath:   "/etc/config/network",
+		MeshConfigPath:      "/etc/config/xiaoqiang",
+		MeshNodesPath:       "",
+		SessionTTLMinutes:   720,
+		MaxSessions:         300,
+		MaxLogLines:         250,
+		AutoRollback:        true,
 	}
 }
 
@@ -92,6 +94,7 @@ func (c Config) validate() error {
 		return errors.New("mode command and mode file are required")
 	}
 	for name, path := range map[string]string{
+		"leigod_update_command": c.LeiGodUpdateCommand,
 		"node_guard_command":    c.NodeGuardCommand,
 		"node_guard_state_path": c.NodeGuardStatePath,
 		"node_guard_log_path":   c.NodeGuardLogPath,

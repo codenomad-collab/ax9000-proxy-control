@@ -12,6 +12,7 @@
   ],
   "ipset_command": "/usr/sbin/ipset",
   "logread_command": "/sbin/logread",
+  "leigod_update_command": "/userdisk/appdata/leigod/manual_update.sh",
   "node_guard_command": "",
   "node_guard_state_path": "",
   "node_guard_log_path": "",

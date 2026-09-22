@@ -196,11 +196,14 @@ async function runAction(action) {
     restart_shellcrash: "重启 ShellCrash",
     start_leigod: "切换到雷神加速器",
     restart_leigod: "重启雷神加速器",
+    update_leigod: "检查雷神更新",
     stop_all: "停止全部代理服务",
   };
   const warning = action === "stop_all"
     ? "停止后，依赖代理的设备可能暂时无法访问部分网络。"
-    : "切换期间网络可能中断数秒；目标服务启动失败时会自动回滚。";
+    : action === "update_leigod"
+      ? "仅在 ShellCrash 或全部停止模式可用；会先保留当前雷神程序，后台检查最长 3 分钟。"
+      : "切换期间网络可能中断数秒；目标服务启动失败时会自动回滚。";
   if (!window.confirm(`确认${labels[action]}？\n\n${warning}`)) return;
   setBusy(true);
   toast(`正在${labels[action]}…`);
@@ -357,6 +360,11 @@ function renderStatus(data) {
   $("#leigod-targets").textContent = data.leigod.target_count;
   $("#leigod-memory").textContent = formatKiB(data.leigod.rss_kib);
   $("#leigod-tun").textContent = data.leigod.tun_game_up ? "UP" : data.leigod.game_running ? "异常" : "未激活";
+  const updateButton = $("#leigod-update-button");
+  updateButton.disabled = state.busy || !data.leigod.update_enabled || mode === "leigod";
+  updateButton.title = !data.leigod.update_enabled
+    ? "雷神手动更新入口尚未安装"
+    : mode === "leigod" ? "请先切换到 ShellCrash 或全部停止" : "备份当前版本后检查更新";
 
   $("#memory-metric").textContent = formatKiB(data.system.mem_available_kib);
   $("#controller-memory").textContent = formatKiB(data.system.controller_rss_kib);
