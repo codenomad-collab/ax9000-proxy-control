@@ -1,0 +1,3 @@
+config xiaoqiang 'common'
+	option NETMODE 'whc_cap'
+	option MESH_VERSION '4'

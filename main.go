@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const version = "0.6.1"
+const version = "0.8.0"
 
 func main() {
 	configPath := flag.String("config", "/data/router-proxy-web/config.json", "configuration file")
@@ -29,7 +29,12 @@ func main() {
 		log.Fatalf("configuration error: %v", err)
 	}
 
-	app := newAppWithConfigPath(cfg, *configPath)
+	capabilityContext, cancelCapabilities := context.WithTimeout(context.Background(), 5*time.Second)
+	capabilities := detectCapabilities(capabilityContext, cfg)
+	cancelCapabilities()
+	cfg = resolveRuntimeConfig(cfg, capabilities)
+
+	app := newAppWithConfigPathAndCapabilities(cfg, *configPath, capabilities)
 	server := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           app.routes(),
@@ -42,7 +47,7 @@ func main() {
 
 	go func() {
 		app.audit.add("info", "system", "控制服务启动，监听 "+cfg.Listen)
-		log.Printf("AX9000 Proxy Control %s listening on %s", version, cfg.Listen)
+		log.Printf("Router Proxy Control %s listening on %s", version, cfg.Listen)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http server: %v", err)
 		}

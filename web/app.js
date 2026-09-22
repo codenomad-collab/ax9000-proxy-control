@@ -265,11 +265,20 @@ function renderNodeGuard(data) {
   $("#guard-running").textContent = data.running ? "检查中" : "空闲";
   $("#guard-running").className = `status-pill ${data.running ? "warning" : "offline"}`;
   $("#guard-version").textContent = data.version ? `v${data.version}` : data.installed ? "已安装" : "—";
+  $("#guard-baseline").textContent = data.initialized
+    ? (data.baseline_at ? `已建立 · ${formatTime(data.baseline_at)}` : "已建立")
+    : "等待首次全量探测";
   $("#guard-last-check").textContent = data.last_check ? formatTime(data.last_check) : "尚未检查";
   $("#guard-failures").textContent = data.consecutive_failures || 0;
   $("#guard-schedule").textContent = data.cron_enabled
     ? (data.scheduler_running ? "每 30 分钟 · 生效" : "已配置 · cron 异常")
     : "已暂停";
+  const rollbackMap = { successful: "成功", failed: "失败" };
+  $("#guard-rollback").textContent = data.last_rollback
+    ? `${rollbackMap[data.rollback_status] || data.rollback_status || "已执行"} · ${formatTime(data.last_rollback)}`
+    : data.last_exercise
+      ? `${data.exercise_status === "passed" ? "演练通过" : "演练需检查"} · ${formatTime(data.last_exercise)}`
+      : "无";
 
   $("#overview-guard-summary").textContent = current[0];
   $("#overview-guard-detail").innerHTML = data.last_check
@@ -416,6 +425,8 @@ function renderSystemMetrics(data) {
     </div>`;
   }).join("") : '<div class="network-empty muted">未发现有线互联接口</div>';
 
+  renderExtendedCollectors(data.extended || {});
+
   renderMeshTopology(data.mesh || {});
 
   const list = $("#network-interface-list");
@@ -432,6 +443,48 @@ function renderSystemMetrics(data) {
     <div class="network-rate upload"><span>发送 TX</span><strong>${item.sample_ready ? formatRate(item.tx_bytes_per_second) : "采样中"}</strong></div>
     <div class="network-total"><span>累计接收 ${formatBytes(item.rx_bytes || 0)}</span><span>累计发送 ${formatBytes(item.tx_bytes || 0)}</span></div>
   </div>`).join("");
+}
+
+function renderExtendedCollectors(extended) {
+  const definitions = [
+    ["ethernet", "有线端口", (data) => {
+      const links = data.links || [];
+      const active = links.filter((item) => item.up);
+      return [`${active.length}/${links.length} 已连接`, active.map((item) => `${item.name} ${item.speed_mbps || "?"}M ${item.duplex === "full" ? "全双工" : item.duplex === "half" ? "半双工" : ""}`).join(" · ") || "没有活动链路"];
+    }],
+    ["temperature", "温度", (data) => {
+      const sensors = data.sensors || [];
+      const maximum = sensors.reduce((value, item) => Math.max(value, Number(item.value || 0)), 0);
+      return [`${maximum.toFixed(1)} °C`, sensors.map((item) => `${item.name} ${Number(item.value || 0).toFixed(1)}°C`).join(" · ")];
+    }],
+    ["fan", "风扇", (data) => {
+      const fans = data.fans || [];
+      const maximum = fans.reduce((value, item) => Math.max(value, Number(item.value || 0)), 0);
+      return [`${Math.round(maximum)} RPM`, fans.map((item) => `${item.name} ${Math.round(Number(item.value || 0))}`).join(" · ")];
+    }],
+    ["usb", "USB 设备", (data) => {
+      const devices = data.devices || [];
+      return [`${devices.length} 个挂载`, devices.map((item) => `${item.device} · ${item.filesystem} · ${formatBytes(item.size_bytes || 0)}`).join(" · ")];
+    }],
+    ["docker", "Docker", (data) => [`${data.containers_running || 0}/${data.containers_total || 0} 运行`, `v${data.version || "?"} · 存储 ${formatBytes(data.storage_bytes || 0)}`]],
+    ["swap", "Swap", (data) => [`${formatPercent(data.usage_percent || 0)}`, `${formatBytes(data.used_bytes || 0)} / ${formatBytes(data.total_bytes || 0)}`]],
+    ["pppoe", "PPPoE", (data) => [data.connected ? "已连接" : "未连接", `${(data.ipv4_addresses || [])[0] || "无 IPv4"} · 在线 ${formatUptime(data.uptime_seconds || 0)}`]],
+    ["mesh", "Mesh 新鲜度", (data) => [data.fresh ? "数据正常" : "缓存过期", `${data.node_count || 0} 个节点 · ${data.role === "cap" ? "主路由" : data.role === "re" ? "子节点" : "角色未知"}`]],
+  ];
+  $("#extended-collector-grid").innerHTML = definitions.map(([name, title, summarize]) => {
+    const result = extended[name] || { supported: true, available: false, message: "采集中" };
+    let summary = result.supported === false ? "不支持" : "不可用";
+    let detail = result.message || "暂时没有采集结果";
+    if (result.available) {
+      [summary, detail] = summarize(result.data || {});
+    }
+    const stateClass = result.available ? "available" : result.supported === false ? "unsupported" : "unavailable";
+    return `<article class="collector-card ${stateClass}">
+      <div class="collector-title"><span></span><strong>${escapeHTML(title)}</strong></div>
+      <b>${escapeHTML(summary)}</b>
+      <p>${escapeHTML(detail || "—")}</p>
+    </article>`;
+  }).join("");
 }
 
 function renderMeshTopology(mesh) {

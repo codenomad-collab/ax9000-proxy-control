@@ -40,12 +40,18 @@ func TestUpdateNodeGuardCron(t *testing.T) {
 func TestReadNodeGuardState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	data := `{
-  "schema_version": 1,
-  "guard_version": "1.0.0",
+  "schema_version": 2,
+  "guard_version": "1.1.0",
+  "initialized": true,
+  "baseline_at": "2026-09-12T14:00:00Z",
   "last_check": "2026-09-12T14:31:46Z",
   "status": "healthy",
   "consecutive_failures": 0,
   "expected_nodes": {"primary":"US-1","secondary":"US-2","backup":"US-3"},
+  "last_rollback": "2026-09-12T14:20:00Z",
+  "rollback_status": "successful",
+  "last_exercise": "2026-09-12T14:25:00Z",
+  "exercise_status": "passed",
   "checks": {"openai":{"samples_ms":[180,190],"successes":2,"median_ms":185,"spread_ms":10}}
 }`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
@@ -55,8 +61,14 @@ func TestReadNodeGuardState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Version != "1.0.0" || state.Status != "healthy" || state.ExpectedNodes.Primary != "US-1" {
+	if state.Version != "1.1.0" || !state.Initialized || state.BaselineAt == "" || state.Status != "healthy" || state.ExpectedNodes.Primary != "US-1" {
 		t.Fatalf("unexpected state: %+v", state)
+	}
+	if state.RollbackStatus != "successful" || state.LastRollback == "" {
+		t.Fatalf("rollback state was not decoded: %+v", state)
+	}
+	if state.ExerciseStatus != "passed" || state.LastExercise == "" {
+		t.Fatalf("exercise state was not decoded: %+v", state)
 	}
 	if state.Checks["openai"].MedianMS != 185 {
 		t.Fatalf("unexpected probe data: %+v", state.Checks["openai"])

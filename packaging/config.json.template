@@ -3,8 +3,7 @@
   "mode_command": "/usr/bin/router-proxy-mode",
   "mode_file": "/data/router_proxy_mode",
   "shellcrash_config_paths": [
-    "/tmp/ShellCrash/config.yaml",
-    "/extdisks/sda1/ShellClash/yamls/config.yaml"
+    "/tmp/ShellCrash/config.yaml"
   ],
   "mihomo_controller_url": "http://127.0.0.1:9097",
   "conntrack_paths": [
@@ -13,10 +12,15 @@
   ],
   "ipset_command": "/usr/sbin/ipset",
   "logread_command": "/sbin/logread",
-  "node_guard_command": "/extdisks/sda1/ShellClash/tools/ax9000-ai-node-guard",
-  "node_guard_state_path": "/extdisks/sda1/ShellClash/tools/ai-node-guard-state.json",
-  "node_guard_log_path": "/extdisks/sda1/ShellClash/logs/ai-node-guard.log",
+  "node_guard_command": "",
+  "node_guard_state_path": "",
+  "node_guard_log_path": "",
   "node_guard_cron_path": "/etc/crontabs/root",
+  "network_config_path": "/etc/config/network",
+  "mesh_config_path": "/etc/config/xiaoqiang",
+  "mesh_nodes_path": "",
+  "wan_interface": "",
+  "external_storage": "__EXTERNAL_STORAGE__",
   "password_salt": "__PASSWORD_SALT__",
   "password_sha256": "__PASSWORD_SHA256__",
   "session_ttl_minutes": 720,

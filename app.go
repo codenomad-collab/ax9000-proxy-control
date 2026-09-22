@@ -14,6 +14,7 @@ var webFiles embed.FS
 
 type App struct {
 	cfg          Config
+	capabilities DeviceCapabilities
 	configPath   string
 	credentialMu sync.RWMutex
 	auth         *authStore
@@ -25,6 +26,7 @@ type App struct {
 	targetAt     time.Time
 	startedAt    time.Time
 	metrics      systemMetricsSampler
+	collectors   *collectorManager
 	last         actionRecord
 }
 
@@ -64,17 +66,25 @@ func (r *actionRecord) snapshot() ActionSummary {
 }
 
 func newApp(cfg Config) *App {
-	return newAppWithConfigPath(cfg, "")
+	return newAppWithConfigPathAndCapabilities(cfg, "", DeviceCapabilities{})
 }
 
 func newAppWithConfigPath(cfg Config, configPath string) *App {
-	return &App{
-		cfg:        cfg,
-		configPath: configPath,
-		auth:       newAuthStore(time.Duration(cfg.SessionTTLMinutes) * time.Minute),
-		audit:      newAuditLog(500),
-		startedAt:  time.Now(),
+	return newAppWithConfigPathAndCapabilities(cfg, configPath, DeviceCapabilities{})
+}
+
+func newAppWithConfigPathAndCapabilities(cfg Config, configPath string, capabilities DeviceCapabilities) *App {
+	app := &App{
+		cfg:          cfg,
+		capabilities: capabilities,
+		configPath:   configPath,
+		auth:         newAuthStore(time.Duration(cfg.SessionTTLMinutes) * time.Minute),
+		audit:        newAuditLog(500),
+		startedAt:    time.Now(),
 	}
+	app.collectors = newCollectorManager(defaultCollectorRegistrations(cfg, capabilities))
+	app.collectors.Start()
+	return app
 }
 
 func (a *App) routes() http.Handler {

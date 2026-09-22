@@ -206,6 +206,18 @@
                 <div class="network-empty muted">正在读取端口协商状态</div>
               </div>
             </div>
+            <div class="extended-monitor">
+              <div class="extended-monitor-head">
+                <div>
+                  <p class="guard-label">设备能力采集器</p>
+                  <p class="muted">八个采集器独立运行；单项失败、超时或不支持不会影响其它资源数据。</p>
+                </div>
+                <span class="link-hint">慢数据按独立周期缓存</span>
+              </div>
+              <div id="extended-collector-grid" class="extended-collector-grid">
+                <div class="network-empty muted">正在建立设备能力缓存</div>
+              </div>
+            </div>
             <div class="mesh-monitor">
               <div class="mesh-monitor-head">
                 <div>
@@ -250,9 +262,11 @@
             </div>
             <div class="guard-metrics">
               <div><span>守护版本</span><strong id="guard-version">—</strong></div>
+              <div><span>基线状态</span><strong id="guard-baseline">—</strong></div>
               <div><span>最近检查</span><strong id="guard-last-check">—</strong></div>
               <div><span>连续故障</span><strong id="guard-failures">0</strong></div>
               <div><span>定时调度</span><strong id="guard-schedule">—</strong></div>
+              <div><span>回滚 / 演练</span><strong id="guard-rollback">—</strong></div>
             </div>
             <div class="guard-detail-grid">
               <div class="guard-detail-block">
