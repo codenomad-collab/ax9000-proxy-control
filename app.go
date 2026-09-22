@@ -27,6 +27,7 @@ type App struct {
 	startedAt    time.Time
 	metrics      systemMetricsSampler
 	collectors   *collectorManager
+	meshNodes    *meshNodesResolver
 	last         actionRecord
 }
 
@@ -66,14 +67,21 @@ func (r *actionRecord) snapshot() ActionSummary {
 }
 
 func newApp(cfg Config) *App {
-	return newAppWithConfigPathAndCapabilities(cfg, "", DeviceCapabilities{})
+	return newAppWithMeshResolver(cfg, "", DeviceCapabilities{}, nil)
 }
 
 func newAppWithConfigPath(cfg Config, configPath string) *App {
-	return newAppWithConfigPathAndCapabilities(cfg, configPath, DeviceCapabilities{})
+	return newAppWithMeshResolver(cfg, configPath, DeviceCapabilities{}, nil)
 }
 
 func newAppWithConfigPathAndCapabilities(cfg Config, configPath string, capabilities DeviceCapabilities) *App {
+	return newAppWithMeshResolver(cfg, configPath, capabilities, nil)
+}
+
+// newAppWithMeshResolver 供 main.go 传入共享的 Mesh 路径解析器。
+// 顶层 system-metrics 与扩展采集器必须引用同一个解析器实例，
+// 否则两处的 Mesh 数据可能不一致。
+func newAppWithMeshResolver(cfg Config, configPath string, capabilities DeviceCapabilities, meshResolver *meshNodesResolver) *App {
 	app := &App{
 		cfg:          cfg,
 		capabilities: capabilities,
@@ -81,8 +89,9 @@ func newAppWithConfigPathAndCapabilities(cfg Config, configPath string, capabili
 		auth:         newAuthStore(time.Duration(cfg.SessionTTLMinutes) * time.Minute),
 		audit:        newAuditLog(500),
 		startedAt:    time.Now(),
+		meshNodes:    meshResolver,
 	}
-	app.collectors = newCollectorManager(defaultCollectorRegistrations(cfg, capabilities))
+	app.collectors = newCollectorManager(defaultCollectorRegistrations(cfg, capabilities, meshResolver))
 	app.collectors.Start()
 	return app
 }

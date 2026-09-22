@@ -29,12 +29,18 @@ func main() {
 		log.Fatalf("configuration error: %v", err)
 	}
 
+	// 必须在 resolveRuntimeConfig 之前保存，否则启动时自动发现的路径
+	// 会被误当成用户显式配置，从而失去「文件稍后生成仍可读取」的语义。
+	configuredMeshNodesPath := cfg.MeshNodesPath
+
 	capabilityContext, cancelCapabilities := context.WithTimeout(context.Background(), 5*time.Second)
 	capabilities := detectCapabilities(capabilityContext, cfg)
 	cancelCapabilities()
 	cfg = resolveRuntimeConfig(cfg, capabilities)
 
-	app := newAppWithConfigPathAndCapabilities(cfg, *configPath, capabilities)
+	meshResolver := newMeshNodesResolver(configuredMeshNodesPath, capabilities.MeshNodesPath)
+
+	app := newAppWithMeshResolver(cfg, *configPath, capabilities, meshResolver)
 	server := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           app.routes(),

@@ -274,6 +274,13 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 	if wanInterface == "" {
 		wanInterface = detectWANInterface(a.cfg.NetworkConfigPath, a.cfg.WANInterface)
 	}
+	// Mesh 缓存路径在运行期惰性解析：控制台可能早于固件生成缓存文件启动，
+	// 且该文件位于 tmpfs，重启后会被重建。
+	meshNodesPath := ""
+	if a.meshNodes != nil {
+		meshNodesPath = a.meshNodes.Resolve()
+	}
+
 	response := SystemMetricsResponse{
 		CPU: CPUStats{
 			Cores:  runtime.NumCPU(),
@@ -284,7 +291,7 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 		Memory:    memoryStats(system),
 		Storage:   readStorageStats(a.cfg.ExternalStorage),
 		Links:     readEthernetLinks("/sys/class/net", wanInterface),
-		Mesh:      readMeshStats(a.cfg.MeshConfigPath, a.cfg.MeshNodesPath, now),
+		Mesh:      readMeshStats(a.cfg.MeshConfigPath, meshNodesPath, now),
 		Timestamp: now,
 	}
 	if a.collectors != nil {
