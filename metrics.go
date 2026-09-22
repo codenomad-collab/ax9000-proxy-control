@@ -276,7 +276,10 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 	}
 	// Mesh 缓存路径在运行期惰性解析：控制台可能早于固件生成缓存文件启动，
 	// 且该文件位于 tmpfs，重启后会被重建。
-	meshNodesPath := ""
+	// 保留静态配置作为兼容回退。生产入口会传入惰性解析器，
+	// 但测试辅助构造函数和其他包内调用允许解析器为 nil；此时顶层
+	// system-metrics 必须与 meshCollector 一样继续使用 cfg 中的路径。
+	meshNodesPath := a.cfg.MeshNodesPath
 	if a.meshNodes != nil {
 		meshNodesPath = a.meshNodes.Resolve()
 	}

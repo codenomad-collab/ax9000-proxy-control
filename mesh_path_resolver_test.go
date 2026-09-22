@@ -298,9 +298,9 @@ func TestMeshResolverSharedBetweenTopLevelAndCollector(t *testing.T) {
 		return ""
 	}
 
-	cfg := Config{MeshConfigPath: configPath, MeshNodesPath: ""}
-	// 采集器由构造函数启动且无停止接口（与既有测试一致）；
-	// 本用例只关心解析器是否被顶层与扩展采集器共享。
+	cfg := testConfig("password")
+	cfg.MeshConfigPath = configPath
+	cfg.MeshNodesPath = ""
 	app := newAppWithMeshResolver(cfg, "", DeviceCapabilities{}, resolver)
 	if app.meshNodes != resolver {
 		t.Fatalf("app should hold the shared resolver")
@@ -308,22 +308,53 @@ func TestMeshResolverSharedBetweenTopLevelAndCollector(t *testing.T) {
 
 	writeMeshNodesFile(t, nodesPath)
 
-	topLevel := readMeshStats(cfg.MeshConfigPath, resolver.Resolve(), time.Now())
+	// 通过真实的 App.systemMetrics 路径验证顶层接线，避免测试绕过
+	// metrics.go 后仍然误报通过。
+	response := app.systemMetrics()
+	if response.Mesh.NodeCount != 2 {
+		t.Fatalf("top-level system metrics should report 2 nodes, got %+v", response.Mesh)
+	}
 
-	collector := &meshCollector{configPath: configPath, resolver: resolver}
+	// 验证默认注册的扩展采集器引用同一个解析器实例，并通过真实注册项采集。
+	slot := app.collectors.slots["mesh"]
+	if slot == nil {
+		t.Fatal("mesh collector slot was not registered")
+	}
+	collector, ok := slot.registration.collector.(*meshCollector)
+	if !ok {
+		t.Fatalf("unexpected mesh collector type %T", slot.registration.collector)
+	}
+	if collector.resolver != resolver {
+		t.Fatal("extended mesh collector should share the app resolver")
+	}
 	value, err := collector.Collect(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	extended := value.(MeshStats)
-
-	if topLevel.NodeCount != extended.NodeCount {
-		t.Fatalf("top-level and extended Mesh disagree: %d vs %d", topLevel.NodeCount, extended.NodeCount)
-	}
-	if topLevel.NodeCount != 2 {
-		t.Fatalf("expected 2 nodes, got %d", topLevel.NodeCount)
+	if response.Mesh.NodeCount != extended.NodeCount {
+		t.Fatalf("top-level and extended Mesh disagree: %d vs %d", response.Mesh.NodeCount, extended.NodeCount)
 	}
 	if strings.TrimSpace(resolver.Resolve()) != nodesPath {
 		t.Fatalf("resolver should settle on %q", nodesPath)
+	}
+}
+
+// 旧构造路径允许不传解析器；顶层 system-metrics 此时必须像扩展采集器
+// 一样回退到 cfg.MeshNodesPath，不能把已有的显式路径清空。
+func TestSystemMetricsFallsBackToConfiguredMeshPathWithoutResolver(t *testing.T) {
+	dir := t.TempDir()
+	configPath := writeMeshConfigFile(t, dir)
+	nodesPath := filepath.Join(dir, "xq_whc_quire")
+	writeMeshNodesFile(t, nodesPath)
+
+	cfg := testConfig("password")
+	cfg.MeshConfigPath = configPath
+	cfg.MeshNodesPath = nodesPath
+	app := newAppWithMeshResolver(cfg, "", DeviceCapabilities{}, nil)
+
+	response := app.systemMetrics()
+	if response.Mesh.NodeCount != 2 || len(response.Mesh.Nodes) != 1 {
+		t.Fatalf("configured Mesh path should survive a nil resolver: %+v", response.Mesh)
 	}
 }
