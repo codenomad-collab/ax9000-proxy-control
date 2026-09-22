@@ -43,7 +43,7 @@ function selectView(view, options = {}) {
   $("#page-eyebrow").textContent = meta[0];
   $("#page-title").textContent = meta[1];
   $("#page-description").textContent = meta[2];
-  document.title = `${meta[1]} · AX9000 代理控制台`;
+  document.title = `${meta[1]} · BE10000 代理控制台`;
   if (updateHash) window.history.replaceState(null, "", `#${next}`);
   window.scrollTo({ top: 0, behavior: "auto" });
   if (refresh && state.csrf) refreshActiveView();
@@ -525,7 +525,7 @@ function renderMeshTopology(mesh) {
   }).join("") : '<div class="network-empty muted">主路由已启用 Mesh，暂未读取到子节点</div>';
 
   topology.innerHTML = `<article class="mesh-node-card mesh-hub">
-    <div class="mesh-node-title"><span class="mesh-node-dot"></span><div><strong>AX9000 主路由</strong><small>${roleLabel}</small></div></div>
+    <div class="mesh-node-title"><span class="mesh-node-dot"></span><div><strong>BE10000 主路由</strong><small>${roleLabel}</small></div></div>
     <div class="mesh-node-details"><span class="mesh-backhaul controller">拓扑控制器</span><span>本机</span></div>
     <p>在线</p>
   </article><div class="mesh-branch"><span></span><div class="mesh-child-grid">${childNodes}</div></div>`;
