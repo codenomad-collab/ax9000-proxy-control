@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	version          = "1.1.1"
+	version          = "1.1.2"
 	stateSchema      = 2
 	failureThreshold = 2
 )
@@ -157,11 +157,11 @@ type Snapshot struct {
 }
 
 type Evaluation struct {
-	Healthy        bool
-	Issues         []string
-	MissingNames   []string
-	BothGroupsDown bool
-	Checks         map[string]ProbeStats
+	Healthy          bool
+	Issues           []string
+	MissingNames     []string
+	ManagedGroupDown bool
+	Checks           map[string]ProbeStats
 }
 
 type CandidateResult struct {
@@ -421,7 +421,7 @@ func run() error {
 }
 
 func shouldRepair(evaluation Evaluation, consecutiveFailures int) bool {
-	return len(evaluation.MissingNames) > 0 || evaluation.BothGroupsDown || consecutiveFailures >= failureThreshold
+	return len(evaluation.MissingNames) > 0 || evaluation.ManagedGroupDown || consecutiveFailures >= failureThreshold
 }
 
 func runSwitchExercise() error {
@@ -716,26 +716,21 @@ func (c *Controller) snapshot() (Snapshot, error) {
 func (c *Controller) evaluate(snapshot Snapshot, expected NodeSet, rounds int) Evaluation {
 	result := Evaluation{Healthy: true, Checks: map[string]ProbeStats{}}
 	order := expected.Ordered()
-	for _, groupName := range []string{"AI-US-STABLE", "GITHUB-US"} {
-		group, ok := snapshot.Proxies.Proxies[groupName]
-		if !ok {
-			result.Issues = append(result.Issues, groupName+" missing")
-			continue
+	ai, ok := snapshot.Proxies.Proxies["AI-US-STABLE"]
+	if !ok {
+		result.Issues = append(result.Issues, "AI-US-STABLE missing")
+	} else {
+		if ai.Type != "Fallback" || !sameStrings(ai.All, order) {
+			result.Issues = append(result.Issues, "AI-US-STABLE structure/order mismatch")
 		}
-		if group.Type != "Fallback" || !sameStrings(group.All, order) {
-			result.Issues = append(result.Issues, groupName+" structure/order mismatch")
-		}
-		if !group.Alive {
-			result.Issues = append(result.Issues, groupName+" unavailable")
+		if !ai.Alive {
+			result.Issues = append(result.Issues, "AI-US-STABLE unavailable")
 		}
 	}
-	ai := snapshot.Proxies.Proxies["AI-US-STABLE"]
-	gh := snapshot.Proxies.Proxies["GITHUB-US"]
-	result.BothGroupsDown = !ai.Alive && !gh.Alive
+	result.ManagedGroupDown = !ai.Alive
 
 	expectedProviders := map[string]string{
 		"ai_us_primary": expected.Primary, "ai_us_secondary": expected.Secondary, "ai_us_backup": expected.Backup,
-		"github_us_primary": expected.Primary, "github_us_secondary": expected.Secondary, "github_us_backup": expected.Backup,
 	}
 	for providerName, nodeName := range expectedProviders {
 		provider, ok := snapshot.Providers.Providers[providerName]
@@ -820,7 +815,6 @@ func (c *Controller) delay(name string, target ProbeTarget) (int, error) {
 func (c *Controller) refreshProviders() {
 	providers := []string{
 		"household", "ai_us_primary", "ai_us_secondary", "ai_us_backup",
-		"github_us_primary", "github_us_secondary", "github_us_backup",
 	}
 	for _, name := range providers {
 		path := "/providers/proxies/" + url.PathEscape(name)
@@ -932,7 +926,6 @@ func lastDelay(node ProxyInfo) int {
 func (c *Controller) applySelection(selection NodeSet) error {
 	mapping := map[string]string{
 		"ai_us_primary": selection.Primary, "ai_us_secondary": selection.Secondary, "ai_us_backup": selection.Backup,
-		"github_us_primary": selection.Primary, "github_us_secondary": selection.Secondary, "github_us_backup": selection.Backup,
 	}
 	timestamp := time.Now().Format("20060102-150405")
 	files := []ManagedFile{
@@ -1079,13 +1072,13 @@ func (c *Controller) verifyApplied(expected NodeSet) error {
 	if err := c.request(http.MethodGet, "/rules", nil, &rules); err != nil {
 		return err
 	}
-	if err := validateManagedRuleCounts(rules.Rules); err != nil {
+	if err := validateManagedRules(rules.Rules); err != nil {
 		return err
 	}
 	flows := []struct{ label, host, targetURL, group string }{
 		{"ChatGPT", "chatgpt.com", "https://chatgpt.com/?ai_guard_verify=1", "AI-US-STABLE"},
 		{"Claude", "claude.ai", "https://claude.ai/?ai_guard_verify=1", "AI-US-STABLE"},
-		{"GitHub", "github.com", "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz", "GITHUB-US"},
+		{"GitHub", "github.com", "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz", "AI-US-STABLE"},
 	}
 	for _, flow := range flows {
 		if err := c.verifyFlow(flow.host, flow.targetURL, flow.group); err != nil {
@@ -1095,16 +1088,40 @@ func (c *Controller) verifyApplied(expected NodeSet) error {
 	return nil
 }
 
-func validateManagedRuleCounts(rules []RuleInfo) error {
-	counts := map[string]int{"AI-US-STABLE": 0, "GITHUB-US": 0}
+var githubDomains = []string{
+	"github.com", "githubusercontent.com", "githubassets.com", "githubcopilot.com",
+	"github.io", "github.dev", "ghcr.io", "git.io",
+}
+
+func validateManagedRules(rules []RuleInfo) error {
+	managedCount := 0
+	githubSeen := make(map[string]bool, len(githubDomains))
+	githubExpected := make(map[string]bool, len(githubDomains))
+	for _, domain := range githubDomains {
+		githubExpected[domain] = true
+	}
 	for _, rule := range rules {
-		if _, ok := counts[rule.Proxy]; ok {
-			counts[rule.Proxy]++
+		if rule.Proxy == "GITHUB-US" {
+			return fmt.Errorf("legacy GITHUB-US rule remains: %s", rule.Payload)
+		}
+		if rule.Proxy == "AI-US-STABLE" {
+			managedCount++
+		}
+		if rule.Type == "DomainSuffix" && githubExpected[rule.Payload] {
+			if rule.Proxy != "AI-US-STABLE" {
+				return fmt.Errorf("GitHub domain %s routes to %s", rule.Payload, rule.Proxy)
+			}
+			githubSeen[rule.Payload] = true
 		}
 	}
-	// User-added rules may extend either group; the baseline rules must remain.
-	if counts["AI-US-STABLE"] < 12 || counts["GITHUB-US"] < 8 {
-		return fmt.Errorf("managed rule counts below baseline: AI=%d GitHub=%d", counts["AI-US-STABLE"], counts["GITHUB-US"])
+	// Keep the original 12 AI rules and all eight migrated GitHub rules.
+	if managedCount < 20 {
+		return fmt.Errorf("AI-US-STABLE rules below merged baseline: %d", managedCount)
+	}
+	for _, domain := range githubDomains {
+		if !githubSeen[domain] {
+			return fmt.Errorf("GitHub domain rule missing: %s", domain)
+		}
 	}
 	return nil
 }

@@ -13,10 +13,7 @@ import (
 )
 
 func TestRewriteFiltersOnlyTouchesManagedProviders(t *testing.T) {
-	providers := []string{
-		"ai_us_primary", "ai_us_secondary", "ai_us_backup",
-		"github_us_primary", "github_us_secondary", "github_us_backup",
-	}
+	providers := []string{"ai_us_primary", "ai_us_secondary", "ai_us_backup"}
 	var source strings.Builder
 	source.WriteString("proxy-providers:\n")
 	for _, name := range providers {
@@ -34,12 +31,9 @@ func TestRewriteFiltersOnlyTouchesManagedProviders(t *testing.T) {
 	source.WriteString("  - MATCH,PROXY\n")
 
 	mapping := map[string]string{
-		"ai_us_primary":       "🇺🇸美国推荐A",
-		"ai_us_secondary":     "🇺🇸美国推荐B",
-		"ai_us_backup":        "🇺🇸美国备用C",
-		"github_us_primary":   "🇺🇸美国推荐A",
-		"github_us_secondary": "🇺🇸美国推荐B",
-		"github_us_backup":    "🇺🇸美国备用C",
+		"ai_us_primary":   "🇺🇸美国推荐A",
+		"ai_us_secondary": "🇺🇸美国推荐B",
+		"ai_us_backup":    "🇺🇸美国备用C",
 	}
 
 	updated, err := rewriteFilters([]byte(source.String()), mapping)
@@ -186,8 +180,8 @@ func TestShouldRepairAfterConsecutiveFailureOrImmediateFault(t *testing.T) {
 	if !shouldRepair(Evaluation{}, failureThreshold) {
 		t.Fatal("consecutive failures must trigger repair")
 	}
-	if !shouldRepair(Evaluation{BothGroupsDown: true}, 1) {
-		t.Fatal("both groups down must trigger immediate repair")
+	if !shouldRepair(Evaluation{ManagedGroupDown: true}, 1) {
+		t.Fatal("managed group down must trigger immediate repair")
 	}
 	if !shouldRepair(Evaluation{MissingNames: []string{"renamed"}}, 1) {
 		t.Fatal("renamed or missing nodes must trigger immediate repair")
@@ -256,30 +250,38 @@ func TestExerciseSelectionUsesVerifiedAlternateOrder(t *testing.T) {
 	}
 }
 
-func TestValidateManagedRuleCountsAllowsExtraUserRules(t *testing.T) {
-	build := func(ai, github int) []RuleInfo {
-		rules := make([]RuleInfo, 0, ai+github)
-		for i := 0; i < ai; i++ {
+func TestValidateManagedRulesRequiresGitHubOnAIGroup(t *testing.T) {
+	build := func(baseAI int) []RuleInfo {
+		rules := make([]RuleInfo, 0, baseAI+len(githubDomains))
+		for i := 0; i < baseAI; i++ {
 			rules = append(rules, RuleInfo{Proxy: "AI-US-STABLE"})
 		}
-		for i := 0; i < github; i++ {
-			rules = append(rules, RuleInfo{Proxy: "GITHUB-US"})
+		for _, domain := range githubDomains {
+			rules = append(rules, RuleInfo{Type: "DomainSuffix", Payload: domain, Proxy: "AI-US-STABLE"})
 		}
 		return rules
 	}
-	for _, tc := range []struct {
-		ai, github int
-		wantErr    bool
-	}{
-		{12, 8, false},
-		{13, 8, false},
-		{12, 9, false},
-		{11, 8, true},
-		{12, 7, true},
-	} {
-		err := validateManagedRuleCounts(build(tc.ai, tc.github))
-		if (err != nil) != tc.wantErr {
-			t.Errorf("AI=%d GitHub=%d: unexpected error %v", tc.ai, tc.github, err)
-		}
+	if err := validateManagedRules(build(12)); err != nil {
+		t.Fatalf("merged baseline rejected: %v", err)
+	}
+	if err := validateManagedRules(build(13)); err != nil {
+		t.Fatalf("additional user rule rejected: %v", err)
+	}
+	if err := validateManagedRules(build(11)); err == nil {
+		t.Fatal("missing original AI rule accepted")
+	}
+	missing := build(13)
+	missing = append(missing[:13], missing[14:]...)
+	if err := validateManagedRules(missing); err == nil {
+		t.Fatal("missing GitHub domain accepted despite sufficient rule count")
+	}
+	wrongGroup := build(12)
+	wrongGroup[12].Proxy = "PROXY"
+	if err := validateManagedRules(wrongGroup); err == nil {
+		t.Fatal("GitHub domain on a different group accepted")
+	}
+	legacy := append(build(12), RuleInfo{Type: "DomainSuffix", Payload: "extra.example", Proxy: "GITHUB-US"})
+	if err := validateManagedRules(legacy); err == nil {
+		t.Fatal("legacy GITHUB-US rule accepted")
 	}
 }
