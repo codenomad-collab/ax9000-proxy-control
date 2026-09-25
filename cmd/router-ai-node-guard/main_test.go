@@ -255,3 +255,31 @@ func TestExerciseSelectionUsesVerifiedAlternateOrder(t *testing.T) {
 		t.Fatalf("unexpected exercise order: %+v", got)
 	}
 }
+
+func TestValidateManagedRuleCountsAllowsExtraUserRules(t *testing.T) {
+	build := func(ai, github int) []RuleInfo {
+		rules := make([]RuleInfo, 0, ai+github)
+		for i := 0; i < ai; i++ {
+			rules = append(rules, RuleInfo{Proxy: "AI-US-STABLE"})
+		}
+		for i := 0; i < github; i++ {
+			rules = append(rules, RuleInfo{Proxy: "GITHUB-US"})
+		}
+		return rules
+	}
+	for _, tc := range []struct {
+		ai, github int
+		wantErr    bool
+	}{
+		{12, 8, false},
+		{13, 8, false},
+		{12, 9, false},
+		{11, 8, true},
+		{12, 7, true},
+	} {
+		err := validateManagedRuleCounts(build(tc.ai, tc.github))
+		if (err != nil) != tc.wantErr {
+			t.Errorf("AI=%d GitHub=%d: unexpected error %v", tc.ai, tc.github, err)
+		}
+	}
+}

@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	version          = "1.1.0"
+	version          = "1.1.1"
 	stateSchema      = 2
 	failureThreshold = 2
 )
@@ -1079,14 +1079,8 @@ func (c *Controller) verifyApplied(expected NodeSet) error {
 	if err := c.request(http.MethodGet, "/rules", nil, &rules); err != nil {
 		return err
 	}
-	counts := map[string]int{"AI-US-STABLE": 0, "GITHUB-US": 0}
-	for _, rule := range rules.Rules {
-		if _, ok := counts[rule.Proxy]; ok {
-			counts[rule.Proxy]++
-		}
-	}
-	if counts["AI-US-STABLE"] != 12 || counts["GITHUB-US"] != 8 {
-		return fmt.Errorf("rule counts mismatch: AI=%d GitHub=%d", counts["AI-US-STABLE"], counts["GITHUB-US"])
+	if err := validateManagedRuleCounts(rules.Rules); err != nil {
+		return err
 	}
 	flows := []struct{ label, host, targetURL, group string }{
 		{"ChatGPT", "chatgpt.com", "https://chatgpt.com/?ai_guard_verify=1", "AI-US-STABLE"},
@@ -1097,6 +1091,20 @@ func (c *Controller) verifyApplied(expected NodeSet) error {
 		if err := c.verifyFlow(flow.host, flow.targetURL, flow.group); err != nil {
 			return fmt.Errorf("%s flow: %w", flow.label, err)
 		}
+	}
+	return nil
+}
+
+func validateManagedRuleCounts(rules []RuleInfo) error {
+	counts := map[string]int{"AI-US-STABLE": 0, "GITHUB-US": 0}
+	for _, rule := range rules {
+		if _, ok := counts[rule.Proxy]; ok {
+			counts[rule.Proxy]++
+		}
+	}
+	// User-added rules may extend either group; the baseline rules must remain.
+	if counts["AI-US-STABLE"] < 12 || counts["GITHUB-US"] < 8 {
+		return fmt.Errorf("managed rule counts below baseline: AI=%d GitHub=%d", counts["AI-US-STABLE"], counts["GITHUB-US"])
 	}
 	return nil
 }
