@@ -315,6 +315,13 @@ input:focus { border-color: rgba(67,225,211,.7); box-shadow: 0 0 0 3px rgba(67,2
 .storage-bar span.warning { background: var(--amber); }
 .storage-bar span.critical { background: var(--red); }
 .storage-value { color: #aac0c4; font-size: 11px; white-space: nowrap; }
+.ssh-control { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 18px; align-items: center; margin-top: 14px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2,10,13,.24); }
+.ssh-control-copy { min-width: 0; }
+.ssh-control-copy .guard-label { margin-bottom: 4px; }
+.ssh-control-copy p:last-child { margin: 0; font-size: 11px; }
+.ssh-control-status { display: grid; gap: 6px; justify-items: start; }
+.ssh-control-actions { display: flex; gap: 8px; }
+.ssh-control-actions .button { white-space: nowrap; }
 .link-monitor { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(2,10,13,.24); }
 .link-monitor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .link-monitor-head .guard-label { margin-bottom: 4px; }
@@ -483,6 +490,8 @@ tr:hover td { background: rgba(255,255,255,.018); }
   .sidebar { padding-inline: 12px; }
   .resource-summary-grid { grid-template-columns: 1fr 1fr; }
   .storage-card { grid-column: 1 / -1; }
+  .ssh-control { grid-template-columns: minmax(0,1fr) auto; }
+  .ssh-control-actions { grid-column: 1 / -1; }
   .focus-grid { grid-template-columns: 1fr 1fr; }
   .focus-card:last-child { grid-column: 1 / -1; }
   .ethernet-link-list { grid-template-columns: 1fr 1fr; }
@@ -537,6 +546,8 @@ tr:hover td { background: rgba(255,255,255,.018); }
   .service-actions, .mode-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .resource-summary-grid { display: grid; }
   .storage-card { grid-column: auto; }
+  .ssh-control { grid-template-columns: 1fr; gap: 12px; }
+  .ssh-control-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .resource-heading, .guard-heading, .link-monitor-head, .extended-monitor-head, .mesh-monitor-head, .network-monitor-head { align-items: stretch; flex-direction: column; }
   .ethernet-link-list { grid-template-columns: 1fr; }
   .extended-collector-grid { grid-template-columns: 1fr; }

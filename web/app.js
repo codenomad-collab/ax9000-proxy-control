@@ -8,6 +8,7 @@ const state = {
   logService: "all",
   busy: false,
   guardBusy: false,
+  sshBusy: false,
   visible: true,
   toastTimer: null,
 };
@@ -393,6 +394,50 @@ async function refreshSystemMetrics() {
   }
 }
 
+async function refreshSSH() {
+  try {
+    renderSSH(await api("/api/ssh"));
+  } catch (err) {
+    if (err.message.includes("登录")) return;
+    $("#ssh-state").textContent = "读取失败";
+    $("#ssh-state").className = "status-pill warning";
+    $("#ssh-message").textContent = err.message;
+    $$('[data-ssh-action]').forEach((button) => { button.disabled = true; });
+  }
+}
+
+function renderSSH(data) {
+  const online = data.supported && data.enabled && data.running && data.safe_listener && data.nvram_enabled;
+  const offline = data.supported && data.listener_checked && !data.enabled && !data.running && !data.nvram_enabled;
+  const pill = $("#ssh-state");
+  pill.textContent = !data.supported ? "不支持" : online ? "已开启" : offline ? "已关闭" : "需检查";
+  pill.className = `status-pill ${online ? "online" : data.supported && !offline ? "warning" : "offline"}`;
+  $("#ssh-message").textContent = data.message || "SSH 状态未知";
+  $("#ssh-listen").textContent = data.safe_listener ? data.listen : data.running ? "监听地址异常" : "端口 22 · 未监听";
+  $('[data-ssh-action="enable"]').disabled = state.sshBusy || !data.supported || !data.listener_checked || online;
+  $('[data-ssh-action="disable"]').disabled = state.sshBusy || !data.supported || !data.listener_checked || offline;
+}
+
+async function runSSHAction(action) {
+  if (state.sshBusy) return;
+  if (action === "disable" && !window.confirm("确认关闭 SSH？\n\n当前 SSH 连接会断开，重启后仍保持关闭。你可以通过本控制台重新开启。")) return;
+  state.sshBusy = true;
+  $$('[data-ssh-action]').forEach((button) => { button.disabled = true; });
+  toast(action === "enable" ? "正在开启 SSH…" : "正在关闭 SSH…");
+  try {
+    const result = await api("/api/ssh/action", { method: "POST", body: JSON.stringify({ action }) });
+    renderSSH(result.status);
+    toast(result.message || "操作完成");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    state.sshBusy = false;
+    await refreshSSH();
+  }
+}
+
+$$('[data-ssh-action]').forEach((button) => button.addEventListener("click", () => runSSHAction(button.dataset.sshAction)));
+
 function renderSystemMetrics(data) {
   const cpu = data.cpu || {};
   const memory = data.memory || {};
@@ -662,7 +707,7 @@ async function refreshActiveView() {
       await Promise.all([refreshSystemMetrics(), refreshNodeGuard()]);
       break;
     case "resources":
-      await refreshSystemMetrics();
+      await Promise.all([refreshSystemMetrics(), refreshSSH()]);
       break;
     case "guard":
       await refreshNodeGuard();
@@ -723,6 +768,7 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshStatus(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy && ["overview", "resources"].includes(state.activeView)) refreshSystemMetrics(); }, 2000);
+setInterval(() => { if (state.visible && state.csrf && !state.sshBusy && state.activeView === "resources") refreshSSH(); }, 5000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy && state.activeView === "sessions") refreshSessions(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy && state.activeView === "logs") refreshLogs(); }, 5000);
 setInterval(() => { if (state.visible && state.csrf && !state.guardBusy && ["overview", "guard"].includes(state.activeView)) refreshNodeGuard(); }, 5000);

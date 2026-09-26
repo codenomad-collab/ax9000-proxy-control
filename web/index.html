@@ -195,6 +195,20 @@
                 <div id="resource-storage-list" class="storage-list"><div class="resource-detail">正在读取挂载点</div></div>
               </article>
             </div>
+            <div class="ssh-control" aria-label="SSH 远程管理">
+              <div class="ssh-control-copy">
+                <p class="guard-label">SSH 远程管理</p>
+                <p id="ssh-message" class="muted">正在读取 Dropbear 状态</p>
+              </div>
+              <div class="ssh-control-status">
+                <span id="ssh-state" class="status-pill offline">读取中</span>
+                <span id="ssh-listen" class="link-hint">端口 22 · LAN</span>
+              </div>
+              <div class="ssh-control-actions">
+                <button class="button secondary" data-ssh-action="enable" type="button" disabled>开启 SSH</button>
+                <button class="button danger-outline" data-ssh-action="disable" type="button" disabled>关闭 SSH</button>
+              </div>
+            </div>
             <div class="link-monitor">
               <div class="link-monitor-head">
                 <div>

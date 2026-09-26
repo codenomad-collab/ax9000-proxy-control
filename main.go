@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const version = "0.8.0"
+const version = "0.9.0"
 
 func main() {
 	configPath := flag.String("config", "/data/router-proxy-web/config.json", "configuration file")

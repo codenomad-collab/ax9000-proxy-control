@@ -21,6 +21,7 @@ type App struct {
 	audit        *AuditLog
 	actionMu     sync.Mutex
 	nodeGuardMu  sync.Mutex
+	sshMu        sync.Mutex
 	targetMu     sync.Mutex
 	targets      []netip.Prefix
 	targetAt     time.Time
@@ -28,6 +29,7 @@ type App struct {
 	metrics      systemMetricsSampler
 	collectors   *collectorManager
 	meshNodes    *meshNodesResolver
+	ssh          *sshManager
 	last         actionRecord
 }
 
@@ -90,6 +92,7 @@ func newAppWithMeshResolver(cfg Config, configPath string, capabilities DeviceCa
 		audit:        newAuditLog(500),
 		startedAt:    time.Now(),
 		meshNodes:    meshResolver,
+		ssh:          newSSHManager(cfg.Listen),
 	}
 	app.collectors = newCollectorManager(defaultCollectorRegistrations(cfg, capabilities, meshResolver))
 	app.collectors.Start()
@@ -110,6 +113,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/action", a.requireAuth(a.handleAction))
 	mux.HandleFunc("/api/node-guard", a.requireAuth(a.handleNodeGuard))
 	mux.HandleFunc("/api/node-guard/action", a.requireAuth(a.handleNodeGuardAction))
+	mux.HandleFunc("/api/ssh", a.requireAuth(a.handleSSHStatus))
+	mux.HandleFunc("/api/ssh/action", a.requireAuth(a.handleSSHAction))
 
 	assets, err := fs.Sub(webFiles, "web")
 	if err != nil {
