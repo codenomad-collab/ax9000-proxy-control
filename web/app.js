@@ -8,6 +8,7 @@ const state = {
   logService: "all",
   busy: false,
   guardBusy: false,
+  sshBusy: false,
   visible: true,
   toastTimer: null,
 };
@@ -43,7 +44,7 @@ function selectView(view, options = {}) {
   $("#page-eyebrow").textContent = meta[0];
   $("#page-title").textContent = meta[1];
   $("#page-description").textContent = meta[2];
-  document.title = `${meta[1]} · AX9000 代理控制台`;
+  document.title = `${meta[1]} · BE10000 代理控制台`;
   if (updateHash) window.history.replaceState(null, "", `#${next}`);
   window.scrollTo({ top: 0, behavior: "auto" });
   if (refresh && state.csrf) refreshActiveView();
@@ -196,11 +197,14 @@ async function runAction(action) {
     restart_shellcrash: "重启 ShellCrash",
     start_leigod: "切换到雷神加速器",
     restart_leigod: "重启雷神加速器",
+    update_leigod: "检查雷神更新",
     stop_all: "停止全部代理服务",
   };
   const warning = action === "stop_all"
     ? "停止后，依赖代理的设备可能暂时无法访问部分网络。"
-    : "切换期间网络可能中断数秒；目标服务启动失败时会自动回滚。";
+    : action === "update_leigod"
+      ? "仅在 ShellCrash 或全部停止模式可用；会先保留当前雷神程序，后台检查最长 3 分钟。"
+      : "切换期间网络可能中断数秒；目标服务启动失败时会自动回滚。";
   if (!window.confirm(`确认${labels[action]}？\n\n${warning}`)) return;
   setBusy(true);
   toast(`正在${labels[action]}…`);
@@ -265,11 +269,20 @@ function renderNodeGuard(data) {
   $("#guard-running").textContent = data.running ? "检查中" : "空闲";
   $("#guard-running").className = `status-pill ${data.running ? "warning" : "offline"}`;
   $("#guard-version").textContent = data.version ? `v${data.version}` : data.installed ? "已安装" : "—";
+  $("#guard-baseline").textContent = data.initialized
+    ? (data.baseline_at ? `已建立 · ${formatTime(data.baseline_at)}` : "已建立")
+    : "等待首次全量探测";
   $("#guard-last-check").textContent = data.last_check ? formatTime(data.last_check) : "尚未检查";
   $("#guard-failures").textContent = data.consecutive_failures || 0;
   $("#guard-schedule").textContent = data.cron_enabled
     ? (data.scheduler_running ? "每 30 分钟 · 生效" : "已配置 · cron 异常")
     : "已暂停";
+  const rollbackMap = { successful: "成功", failed: "失败" };
+  $("#guard-rollback").textContent = data.last_rollback
+    ? `${rollbackMap[data.rollback_status] || data.rollback_status || "已执行"} · ${formatTime(data.last_rollback)}`
+    : data.last_exercise
+      ? `${data.exercise_status === "passed" ? "演练通过" : "演练需检查"} · ${formatTime(data.last_exercise)}`
+      : "无";
 
   $("#overview-guard-summary").textContent = current[0];
   $("#overview-guard-detail").innerHTML = data.last_check
@@ -348,6 +361,11 @@ function renderStatus(data) {
   $("#leigod-targets").textContent = data.leigod.target_count;
   $("#leigod-memory").textContent = formatKiB(data.leigod.rss_kib);
   $("#leigod-tun").textContent = data.leigod.tun_game_up ? "UP" : data.leigod.game_running ? "异常" : "未激活";
+  const updateButton = $("#leigod-update-button");
+  updateButton.disabled = state.busy || !data.leigod.update_enabled || mode === "leigod";
+  updateButton.title = !data.leigod.update_enabled
+    ? "雷神手动更新入口尚未安装"
+    : mode === "leigod" ? "请先切换到 ShellCrash 或全部停止" : "备份当前版本后检查更新";
 
   $("#memory-metric").textContent = formatKiB(data.system.mem_available_kib);
   $("#controller-memory").textContent = formatKiB(data.system.controller_rss_kib);
@@ -375,6 +393,50 @@ async function refreshSystemMetrics() {
     if (!err.message.includes("登录")) toast(`资源监控刷新失败：${err.message}`, true);
   }
 }
+
+async function refreshSSH() {
+  try {
+    renderSSH(await api("/api/ssh"));
+  } catch (err) {
+    if (err.message.includes("登录")) return;
+    $("#ssh-state").textContent = "读取失败";
+    $("#ssh-state").className = "status-pill warning";
+    $("#ssh-message").textContent = err.message;
+    $$('[data-ssh-action]').forEach((button) => { button.disabled = true; });
+  }
+}
+
+function renderSSH(data) {
+  const online = data.supported && data.enabled && data.running && data.safe_listener && data.nvram_enabled;
+  const offline = data.supported && data.listener_checked && !data.enabled && !data.running && !data.nvram_enabled;
+  const pill = $("#ssh-state");
+  pill.textContent = !data.supported ? "不支持" : online ? "已开启" : offline ? "已关闭" : "需检查";
+  pill.className = `status-pill ${online ? "online" : data.supported && !offline ? "warning" : "offline"}`;
+  $("#ssh-message").textContent = data.message || "SSH 状态未知";
+  $("#ssh-listen").textContent = data.safe_listener ? data.listen : data.running ? "监听地址异常" : "端口 22 · 未监听";
+  $('[data-ssh-action="enable"]').disabled = state.sshBusy || !data.supported || !data.listener_checked || online;
+  $('[data-ssh-action="disable"]').disabled = state.sshBusy || !data.supported || !data.listener_checked || offline;
+}
+
+async function runSSHAction(action) {
+  if (state.sshBusy) return;
+  if (action === "disable" && !window.confirm("确认关闭 SSH？\n\n当前 SSH 连接会断开，重启后仍保持关闭。你可以通过本控制台重新开启。")) return;
+  state.sshBusy = true;
+  $$('[data-ssh-action]').forEach((button) => { button.disabled = true; });
+  toast(action === "enable" ? "正在开启 SSH…" : "正在关闭 SSH…");
+  try {
+    const result = await api("/api/ssh/action", { method: "POST", body: JSON.stringify({ action }) });
+    renderSSH(result.status);
+    toast(result.message || "操作完成");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    state.sshBusy = false;
+    await refreshSSH();
+  }
+}
+
+$$('[data-ssh-action]').forEach((button) => button.addEventListener("click", () => runSSHAction(button.dataset.sshAction)));
 
 function renderSystemMetrics(data) {
   const cpu = data.cpu || {};
@@ -416,6 +478,8 @@ function renderSystemMetrics(data) {
     </div>`;
   }).join("") : '<div class="network-empty muted">未发现有线互联接口</div>';
 
+  renderExtendedCollectors(data.extended || {});
+
   renderMeshTopology(data.mesh || {});
 
   const list = $("#network-interface-list");
@@ -432,6 +496,48 @@ function renderSystemMetrics(data) {
     <div class="network-rate upload"><span>发送 TX</span><strong>${item.sample_ready ? formatRate(item.tx_bytes_per_second) : "采样中"}</strong></div>
     <div class="network-total"><span>累计接收 ${formatBytes(item.rx_bytes || 0)}</span><span>累计发送 ${formatBytes(item.tx_bytes || 0)}</span></div>
   </div>`).join("");
+}
+
+function renderExtendedCollectors(extended) {
+  const definitions = [
+    ["ethernet", "有线端口", (data) => {
+      const links = data.links || [];
+      const active = links.filter((item) => item.up);
+      return [`${active.length}/${links.length} 已连接`, active.map((item) => `${item.name} ${item.speed_mbps || "?"}M ${item.duplex === "full" ? "全双工" : item.duplex === "half" ? "半双工" : ""}`).join(" · ") || "没有活动链路"];
+    }],
+    ["temperature", "温度", (data) => {
+      const sensors = data.sensors || [];
+      const maximum = sensors.reduce((value, item) => Math.max(value, Number(item.value || 0)), 0);
+      return [`${maximum.toFixed(1)} °C`, sensors.map((item) => `${item.name} ${Number(item.value || 0).toFixed(1)}°C`).join(" · ")];
+    }],
+    ["fan", "风扇", (data) => {
+      const fans = data.fans || [];
+      const maximum = fans.reduce((value, item) => Math.max(value, Number(item.value || 0)), 0);
+      return [`${Math.round(maximum)} RPM`, fans.map((item) => `${item.name} ${Math.round(Number(item.value || 0))}`).join(" · ")];
+    }],
+    ["usb", "USB 设备", (data) => {
+      const devices = data.devices || [];
+      return [`${devices.length} 个挂载`, devices.map((item) => `${item.device} · ${item.filesystem} · ${formatBytes(item.size_bytes || 0)}`).join(" · ")];
+    }],
+    ["docker", "Docker", (data) => [`${data.containers_running || 0}/${data.containers_total || 0} 运行`, `v${data.version || "?"} · 存储 ${formatBytes(data.storage_bytes || 0)}`]],
+    ["swap", "Swap", (data) => [`${formatPercent(data.usage_percent || 0)}`, `${formatBytes(data.used_bytes || 0)} / ${formatBytes(data.total_bytes || 0)}`]],
+    ["pppoe", "PPPoE", (data) => [data.connected ? "已连接" : "未连接", `${(data.ipv4_addresses || [])[0] || "无 IPv4"} · 在线 ${formatUptime(data.uptime_seconds || 0)}`]],
+    ["mesh", "Mesh 新鲜度", (data) => [data.fresh ? "数据正常" : "缓存过期", `${data.node_count || 0} 个节点 · ${data.role === "cap" ? "主路由" : data.role === "re" ? "子节点" : "角色未知"}`]],
+  ];
+  $("#extended-collector-grid").innerHTML = definitions.map(([name, title, summarize]) => {
+    const result = extended[name] || { supported: true, available: false, message: "采集中" };
+    let summary = result.supported === false ? "不支持" : "不可用";
+    let detail = result.message || "暂时没有采集结果";
+    if (result.available) {
+      [summary, detail] = summarize(result.data || {});
+    }
+    const stateClass = result.available ? "available" : result.supported === false ? "unsupported" : "unavailable";
+    return `<article class="collector-card ${stateClass}">
+      <div class="collector-title"><span></span><strong>${escapeHTML(title)}</strong></div>
+      <b>${escapeHTML(summary)}</b>
+      <p>${escapeHTML(detail || "—")}</p>
+    </article>`;
+  }).join("");
 }
 
 function renderMeshTopology(mesh) {
@@ -472,7 +578,7 @@ function renderMeshTopology(mesh) {
   }).join("") : '<div class="network-empty muted">主路由已启用 Mesh，暂未读取到子节点</div>';
 
   topology.innerHTML = `<article class="mesh-node-card mesh-hub">
-    <div class="mesh-node-title"><span class="mesh-node-dot"></span><div><strong>AX9000 主路由</strong><small>${roleLabel}</small></div></div>
+    <div class="mesh-node-title"><span class="mesh-node-dot"></span><div><strong>BE10000 主路由</strong><small>${roleLabel}</small></div></div>
     <div class="mesh-node-details"><span class="mesh-backhaul controller">拓扑控制器</span><span>本机</span></div>
     <p>在线</p>
   </article><div class="mesh-branch"><span></span><div class="mesh-child-grid">${childNodes}</div></div>`;
@@ -601,7 +707,7 @@ async function refreshActiveView() {
       await Promise.all([refreshSystemMetrics(), refreshNodeGuard()]);
       break;
     case "resources":
-      await refreshSystemMetrics();
+      await Promise.all([refreshSystemMetrics(), refreshSSH()]);
       break;
     case "guard":
       await refreshNodeGuard();
@@ -662,6 +768,7 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(() => { if (state.visible && state.csrf && !state.busy) refreshStatus(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy && ["overview", "resources"].includes(state.activeView)) refreshSystemMetrics(); }, 2000);
+setInterval(() => { if (state.visible && state.csrf && !state.sshBusy && state.activeView === "resources") refreshSSH(); }, 5000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy && state.activeView === "sessions") refreshSessions(); }, 2000);
 setInterval(() => { if (state.visible && state.csrf && !state.busy && state.activeView === "logs") refreshLogs(); }, 5000);
 setInterval(() => { if (state.visible && state.csrf && !state.guardBusy && ["overview", "guard"].includes(state.activeView)) refreshNodeGuard(); }, 5000);

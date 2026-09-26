@@ -1,0 +1,6 @@
+config interface 'lan'
+	option proto 'static'
+
+config interface 'wan'
+	option proto 'pppoe'
+	option device 'eth4'

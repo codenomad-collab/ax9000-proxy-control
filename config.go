@@ -20,10 +20,16 @@ type Config struct {
 	ConntrackPaths        []string `json:"conntrack_paths"`
 	IPSetCommand          string   `json:"ipset_command"`
 	LogreadCommand        string   `json:"logread_command"`
+	LeiGodUpdateCommand   string   `json:"leigod_update_command"`
 	NodeGuardCommand      string   `json:"node_guard_command"`
 	NodeGuardStatePath    string   `json:"node_guard_state_path"`
 	NodeGuardLogPath      string   `json:"node_guard_log_path"`
 	NodeGuardCronPath     string   `json:"node_guard_cron_path"`
+	NetworkConfigPath     string   `json:"network_config_path"`
+	MeshConfigPath        string   `json:"mesh_config_path"`
+	MeshNodesPath         string   `json:"mesh_nodes_path"`
+	WANInterface          string   `json:"wan_interface"`
+	ExternalStorage       string   `json:"external_storage"`
 	PasswordSalt          string   `json:"password_salt"`
 	PasswordSHA256        string   `json:"password_sha256"`
 	SessionTTLMinutes     int      `json:"session_ttl_minutes"`
@@ -34,28 +40,31 @@ type Config struct {
 
 func defaultConfig() Config {
 	return Config{
-		Listen:      "192.168.1.1:9098",
+		Listen:      "",
 		ModeCommand: "/usr/bin/router-proxy-mode",
 		ModeFile:    "/data/router_proxy_mode",
 		ShellCrashConfigPaths: []string{
 			"/tmp/ShellCrash/config.yaml",
-			"/extdisks/sda1/ShellClash/yamls/config.yaml",
 		},
 		MihomoControllerURL: "http://127.0.0.1:9097",
 		ConntrackPaths: []string{
 			"/proc/net/nf_conntrack",
 			"/proc/net/ip_conntrack",
 		},
-		IPSetCommand:       "/usr/sbin/ipset",
-		LogreadCommand:     "/sbin/logread",
-		NodeGuardCommand:   "/extdisks/sda1/ShellClash/tools/ax9000-ai-node-guard",
-		NodeGuardStatePath: "/extdisks/sda1/ShellClash/tools/ai-node-guard-state.json",
-		NodeGuardLogPath:   "/extdisks/sda1/ShellClash/logs/ai-node-guard.log",
-		NodeGuardCronPath:  "/etc/crontabs/root",
-		SessionTTLMinutes:  720,
-		MaxSessions:        300,
-		MaxLogLines:        250,
-		AutoRollback:       true,
+		IPSetCommand:        "/usr/sbin/ipset",
+		LogreadCommand:      "/sbin/logread",
+		LeiGodUpdateCommand: "/userdisk/appdata/leigod/manual_update.sh",
+		NodeGuardCommand:    "",
+		NodeGuardStatePath:  "",
+		NodeGuardLogPath:    "",
+		NodeGuardCronPath:   "/etc/crontabs/root",
+		NetworkConfigPath:   "/etc/config/network",
+		MeshConfigPath:      "/etc/config/xiaoqiang",
+		MeshNodesPath:       "",
+		SessionTTLMinutes:   720,
+		MaxSessions:         300,
+		MaxLogLines:         250,
+		AutoRollback:        true,
 	}
 }
 
@@ -76,17 +85,24 @@ func loadConfig(path string) (Config, error) {
 
 func (c Config) validate() error {
 	if strings.TrimSpace(c.Listen) == "" {
-		return errors.New("listen address is required")
+		return errors.New("listen address is required; set listen to the router LAN IPv4 address and port, for example 192.168.50.1:9098")
+	}
+	if strings.HasPrefix(strings.TrimSpace(c.Listen), "0.0.0.0:") || strings.HasPrefix(strings.TrimSpace(c.Listen), "[") {
+		return errors.New("listen must bind one LAN IPv4 address; wildcard and IPv6 listeners are not allowed")
 	}
 	if c.ModeCommand == "" || c.ModeFile == "" {
 		return errors.New("mode command and mode file are required")
 	}
 	for name, path := range map[string]string{
+		"leigod_update_command": c.LeiGodUpdateCommand,
 		"node_guard_command":    c.NodeGuardCommand,
 		"node_guard_state_path": c.NodeGuardStatePath,
 		"node_guard_log_path":   c.NodeGuardLogPath,
 		"node_guard_cron_path":  c.NodeGuardCronPath,
 	} {
+		if path == "" && name != "node_guard_cron_path" {
+			continue
+		}
 		if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "\r\n") {
 			return fmt.Errorf("%s must be an absolute path without newlines", name)
 		}
