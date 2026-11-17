@@ -536,19 +536,14 @@ func (g *routingGuard) run(parent context.Context, force bool) {
 		}
 		next := []string{}
 		if p.Name == "YOUTUBE-2K" {
-			for _, n := range pools[p.Name] {
-				for _, m := range results {
-					if m.Name == n && m.Good {
-						next = append(next, n)
-					}
-				}
-			}
+			verified := []string{}
 			// Unknown video nodes need a payload measurement before they enter the pool.
 			for _, n := range good {
 				if v, ok := g.state.Samples[n]; ok && time.Since(v.At) < time.Hour && v.Mbps > 0 {
-					next = append(next, n)
+					verified = append(verified, n)
 				}
 			}
+			next = routingStablePool(pools[p.Name], "", allNames, verified)
 		} else {
 			best := routingMeasurement{}
 			for _, m := range results {
@@ -561,13 +556,12 @@ func (g *routingGuard) run(parent context.Context, force bool) {
 				best = m
 				break
 			}
+			promoted := ""
 			if routingShouldPromote(s, cur, best, time.Now(), time.Duration(g.policy.CooldownSeconds)*time.Second) {
-				next = append(next, best.Name)
+				promoted = best.Name
 				s.Reason = "两轮检测确认线路更好"
-			} else if cur.Good {
-				next = append(next, current)
 			}
-			next = append(next, good...)
+			next = routingStablePool(pools[p.Name], promoted, allNames, good)
 		}
 		next = uniqueNames(next)
 		if len(next) > 3 {
@@ -757,6 +751,22 @@ func sameStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// A rotating probe is evidence, not permission to reshuffle a healthy pool.
+// Only a confirmed promotion or a disappeared subscription member changes it.
+func routingStablePool(previous []string, promoted string, valid map[string]bool, healthy []string) []string {
+	out := []string{}
+	for _, n := range append(append([]string{promoted}, previous...), healthy...) {
+		if n != "" && valid[n] {
+			out = append(out, n)
+		}
+	}
+	out = uniqueNames(out)
+	if len(out) > 3 {
+		out = out[:3]
+	}
+	return out
 }
 
 func (g *routingGuard) reconnectGroup(ctx context.Context, group, oldNode string) {

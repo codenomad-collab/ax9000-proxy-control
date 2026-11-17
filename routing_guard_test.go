@@ -381,3 +381,20 @@ func TestRoutingClearsPinBeforeNoopVerification(t *testing.T) {
 		t.Fatal("no-op reconciliation failed")
 	}
 }
+
+func TestRoutingStablePoolDoesNotChurnOnProbeRotation(t *testing.T) {
+	valid := map[string]bool{"a": true, "b": true, "c": true, "d": true}
+	previous := []string{"a", "b", "c"}
+	for _, healthy := range [][]string{{"d", "c", "b", "a"}, {"b", "d"}, {"a", "c"}} {
+		if got := routingStablePool(previous, "", valid, healthy); !reflect.DeepEqual(got, previous) {
+			t.Fatalf("routine probe changed pool: %v", got)
+		}
+	}
+	if got := routingStablePool(previous, "d", valid, []string{"d", "a"}); !reflect.DeepEqual(got, []string{"d", "a", "b"}) {
+		t.Fatal("confirmed promotion missing", got)
+	}
+	delete(valid, "b")
+	if got := routingStablePool(previous, "", valid, []string{"d"}); !reflect.DeepEqual(got, []string{"a", "c", "d"}) {
+		t.Fatal("renamed candidate not replaced", got)
+	}
+}
