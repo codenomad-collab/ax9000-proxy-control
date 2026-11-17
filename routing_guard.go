@@ -458,6 +458,7 @@ func (g *routingGuard) run(parent context.Context, force bool) {
 	_ = g.controller(ctx, "GET", "/connections", nil, &connections)
 	active := map[string]bool{}
 	trafficBytes := map[string]int64{}
+	mediaBytes := map[string]int64{}
 	for _, c := range connections.Connections {
 		old, seen := g.traffic[c.ID]
 		if (!seen && c.Download > 4096) || (seen && c.Download-old > 4096) {
@@ -467,6 +468,10 @@ func (g *routingGuard) run(parent context.Context, force bool) {
 						active[p.Name] = true
 						if seen && c.Download > old {
 							trafficBytes[p.Name] += c.Download - old
+							h := c.Metadata.Host
+							if strings.HasSuffix(h, ".googlevideo.com") || h == "video.twimg.com" || strings.HasSuffix(h, ".video.twimg.com") {
+								mediaBytes[p.Name] += c.Download - old
+							}
 						}
 					}
 				}
@@ -523,7 +528,7 @@ func (g *routingGuard) run(parent context.Context, force bool) {
 		s := g.state.Groups[p.Name]
 		s.Current = current
 		s.Active = active[p.Name]
-		if !firstTraffic && trafficSeconds > 20 && active[p.Name] && trafficBytes[p.Name] > 4096 && float64(trafficBytes[p.Name])*8/trafficSeconds/1e6 < 4 {
+		if !firstTraffic && trafficSeconds > 20 && active[p.Name] && mediaBytes[p.Name] > 1<<20 && float64(trafficBytes[p.Name])*8/trafficSeconds/1e6 < 4 {
 			s.WeakWindows++
 		} else {
 			s.WeakWindows = 0
