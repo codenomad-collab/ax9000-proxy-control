@@ -577,3 +577,11 @@ tr:hover td { background: rgba(255,255,255,.018); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Routing quality shares the existing guard layout on desktop and mobile. */
+.quality-current { display:block; overflow-wrap:anywhere; line-height:1.6; }
+.quality-candidates { padding-left:1.25rem; line-height:1.8; overflow-wrap:anywhere; font-size:13px; color:var(--muted); }
+.quality-layout { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.quality-metrics { grid-template-columns:repeat(4,minmax(0,1fr)); }
+@media (max-width:900px) { .quality-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:620px) { .quality-layout { grid-template-columns:minmax(0,1fr); } }

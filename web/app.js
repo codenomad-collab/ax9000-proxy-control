@@ -19,7 +19,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const pageMeta = {
   overview: ["COMMAND CENTER", "运行总览", "先确认当前代理模式和服务健康，再进入具体栏目处理问题。"],
   resources: ["ROUTER HEALTH", "资源监控", "查看 CPU、内存、存储、Mesh 拓扑、有线协商状态和关键接口实时速率。"],
-  guard: ["AI ROUTE HEALTH", "节点守护", "管理 ChatGPT、Claude 与 GitHub 使用的优质美国线路。"],
+  guard: ["ROUTE HEALTH", "节点守护", "管理常用网站自动选路与 ChatGPT、Claude、GitHub 的美国线路。"],
   sessions: ["TRAFFIC INSPECTOR", "网络会话", "核对设备、目标域名、命中规则和实际出口路径。"],
   logs: ["OPERATIONS", "运行日志", "查看控制操作、服务运行和路由器故障信息。"],
 };
@@ -248,11 +248,45 @@ function setGuardBusy(value) {
 }
 
 async function refreshNodeGuard() {
+  await refreshRoutingGuard();
   try {
     renderNodeGuard(await api("/api/node-guard"));
   } catch (err) {
     if (!err.message.includes("登录")) toast(`节点守护状态刷新失败：${err.message}`, true);
   }
+}
+
+$$('[data-quality-action]').forEach((button) => button.addEventListener("click", async () => {
+  button.disabled = true;
+  try {
+    const result = await api("/api/routing-guard/action", { method: "POST", body: JSON.stringify({ action: button.dataset.qualityAction }) });
+    renderRoutingGuard(result.status); toast(result.message);
+  } catch (err) { toast(err.message, true); }
+  finally { await refreshRoutingGuard(); }
+}));
+
+async function refreshRoutingGuard() {
+  try { renderRoutingGuard(await api("/api/routing-guard")); }
+  catch (err) { $("#quality-message").textContent = `质量守护暂不可用：${err.message}`; }
+}
+
+function renderRoutingGuard(data) {
+  const status = $("#quality-state");
+  status.textContent = !data.configured ? "尚未配置" : data.running ? "检测中" : data.enabled ? "自动运行" : "质量调整已暂停";
+  status.className = `status-pill ${data.configured && data.enabled ? "online" : "offline"}`;
+  $("#quality-interval").textContent = data.configured ? `${data.check_seconds} 秒` : "—";
+  $("#quality-last").textContent = data.last_check && !data.last_check.startsWith("0001-") ? formatTime(data.last_check) : "等待首次检查";
+  $("#quality-budget").textContent = data.configured ? `${formatBytes(data.spent_bytes || 0)} / ${formatBytes(data.budget_bytes || 0)}` : "—";
+  $("#quality-cooldown").textContent = data.configured ? `${Math.round(data.cooldown_seconds / 60)} 分钟 · 优于 30%` : "—";
+  $("#quality-message").textContent = data.message || "带宽检测按活跃业务触发；暂停调整后，内核故障回退仍继续。";
+  const groups = ["YOUTUBE-2K", "X-STABLE", "GOOGLE-AUTO", "AUTO"].map((name) => data.groups && data.groups[name]).filter(Boolean);
+  $("#quality-groups").innerHTML = groups.map((g) => {
+    const sampled = g.sampled_at && !g.sampled_at.startsWith("0001-");
+    const measured = sampled ? `${Number(g.mbps || 0).toFixed(1)} Mbps · ${escapeHTML(formatTime(g.sampled_at))}` : "尚无下载样本";
+    return `<div class="guard-detail-block"><p class="guard-label">${escapeHTML(g.label || "业务线路")} · ${g.active ? "近期有流量" : "空闲"}</p><strong class="quality-current">${escapeHTML(g.current || "等待检查")}</strong><p class="muted">响应 ${g.delay_ms ? `${g.delay_ms} ms` : "待测 / 异常"} · 连续异常 ${g.failures || 0}</p><p class="muted">${measured}</p><ol class="quality-candidates">${(g.nodes || []).map((n) => `<li>${escapeHTML(n)}</li>`).join("")}</ol><p class="muted">${escapeHTML(g.reason || "内核自动回退就绪")}</p></div>`;
+  }).join("");
+  $("#quality-events").innerHTML = (data.events || []).slice().reverse().map((e) => `<div>${escapeHTML(formatTime(e.time))} · ${escapeHTML(e.message)}</div>`).join("") || '<div class="muted">暂无自动切换记录</div>';
+  $$('[data-quality-action]').forEach((b) => { b.disabled = !data.configured || (b.dataset.qualityAction === "run" && data.running); });
 }
 
 function renderNodeGuard(data) {

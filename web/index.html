@@ -48,7 +48,7 @@
         </button>
         <button class="nav-item" type="button" data-nav-view="guard">
           <span class="nav-icon" aria-hidden="true">◇</span>
-          <span><strong>节点守护</strong><small>AI 美国线路</small></span>
+          <span><strong>节点守护</strong><small>常用网站 · AI 美国线路</small></span>
         </button>
         <button class="nav-item" type="button" data-nav-view="sessions">
           <span class="nav-icon" aria-hidden="true">⇄</span>
@@ -260,6 +260,26 @@
         </section>
 
         <section class="page-view" data-page="guard" aria-labelledby="page-title">
+          <section class="panel guard-panel" aria-labelledby="quality-title">
+            <div class="panel-heading guard-heading">
+              <div><p class="eyebrow">SMART ROUTING · ROUTER LOCAL</p><h2 id="quality-title">常用网站自动选路</h2><p class="muted guard-description">YouTube、X、Google 与通用访问分别选路；连续检测确认后调整，节点失效由内核自动回退。</p></div>
+              <span id="quality-state" class="status-pill offline" role="status">读取中</span>
+            </div>
+            <div class="guard-metrics quality-metrics">
+              <div><span>轻量检查</span><strong id="quality-interval">—</strong></div>
+              <div><span>最近检查</span><strong id="quality-last">—</strong></div>
+              <div><span>今日测速预算</span><strong id="quality-budget">—</strong></div>
+              <div><span>切换保护</span><strong id="quality-cooldown">—</strong></div>
+            </div>
+            <p id="quality-message" class="muted">等待质量守护状态</p>
+            <div id="quality-groups" class="guard-detail-grid quality-layout"></div>
+            <div class="guard-actions">
+              <button class="button primary" type="button" data-quality-action="run">立即检测</button>
+              <button class="button secondary" type="button" data-quality-action="restore">恢复自动</button>
+              <button class="button danger-outline" type="button" data-quality-action="disable">暂停质量调整</button>
+            </div>
+            <details class="guard-log-details"><summary>查看自动切换记录</summary><div id="quality-events" class="guard-log-output"><div class="muted">暂无记录</div></div></details>
+          </section>
           <section class="panel guard-panel">
             <div class="panel-heading guard-heading">
               <div class="service-head">

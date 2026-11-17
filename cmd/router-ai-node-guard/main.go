@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	version          = "1.1.2"
+	version          = "1.1.3"
 	stateSchema      = 2
 	failureThreshold = 2
 )
@@ -802,7 +802,8 @@ func (c *Controller) delay(name string, target ProbeTarget) (int, error) {
 	query.Set("url", target.URL)
 	query.Set("timeout", "5000")
 	query.Set("expected", target.ExpectedStatus)
-	path := "/proxies/" + url.PathEscape(name) + "/delay?" + query.Encode()
+	// Provider-owned nodes are not global /proxies entries in recent Mihomo.
+	path := "/providers/proxies/household/" + url.PathEscape(name) + "/healthcheck?" + query.Encode()
 	var response struct {
 		Delay int `json:"delay"`
 	}

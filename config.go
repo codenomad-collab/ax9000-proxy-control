@@ -12,30 +12,31 @@ import (
 )
 
 type Config struct {
-	Listen                string   `json:"listen"`
-	ModeCommand           string   `json:"mode_command"`
-	ModeFile              string   `json:"mode_file"`
-	ShellCrashConfigPaths []string `json:"shellcrash_config_paths"`
-	MihomoControllerURL   string   `json:"mihomo_controller_url"`
-	ConntrackPaths        []string `json:"conntrack_paths"`
-	IPSetCommand          string   `json:"ipset_command"`
-	LogreadCommand        string   `json:"logread_command"`
-	LeiGodUpdateCommand   string   `json:"leigod_update_command"`
-	NodeGuardCommand      string   `json:"node_guard_command"`
-	NodeGuardStatePath    string   `json:"node_guard_state_path"`
-	NodeGuardLogPath      string   `json:"node_guard_log_path"`
-	NodeGuardCronPath     string   `json:"node_guard_cron_path"`
-	NetworkConfigPath     string   `json:"network_config_path"`
-	MeshConfigPath        string   `json:"mesh_config_path"`
-	MeshNodesPath         string   `json:"mesh_nodes_path"`
-	WANInterface          string   `json:"wan_interface"`
-	ExternalStorage       string   `json:"external_storage"`
-	PasswordSalt          string   `json:"password_salt"`
-	PasswordSHA256        string   `json:"password_sha256"`
-	SessionTTLMinutes     int      `json:"session_ttl_minutes"`
-	MaxSessions           int      `json:"max_sessions"`
-	MaxLogLines           int      `json:"max_log_lines"`
-	AutoRollback          bool     `json:"auto_rollback"`
+	Listen                 string   `json:"listen"`
+	ModeCommand            string   `json:"mode_command"`
+	ModeFile               string   `json:"mode_file"`
+	ShellCrashConfigPaths  []string `json:"shellcrash_config_paths"`
+	MihomoControllerURL    string   `json:"mihomo_controller_url"`
+	ConntrackPaths         []string `json:"conntrack_paths"`
+	IPSetCommand           string   `json:"ipset_command"`
+	LogreadCommand         string   `json:"logread_command"`
+	LeiGodUpdateCommand    string   `json:"leigod_update_command"`
+	NodeGuardCommand       string   `json:"node_guard_command"`
+	NodeGuardStatePath     string   `json:"node_guard_state_path"`
+	NodeGuardLogPath       string   `json:"node_guard_log_path"`
+	NodeGuardCronPath      string   `json:"node_guard_cron_path"`
+	RoutingGuardPolicyPath string   `json:"routing_guard_policy_path,omitempty"`
+	NetworkConfigPath      string   `json:"network_config_path"`
+	MeshConfigPath         string   `json:"mesh_config_path"`
+	MeshNodesPath          string   `json:"mesh_nodes_path"`
+	WANInterface           string   `json:"wan_interface"`
+	ExternalStorage        string   `json:"external_storage"`
+	PasswordSalt           string   `json:"password_salt"`
+	PasswordSHA256         string   `json:"password_sha256"`
+	SessionTTLMinutes      int      `json:"session_ttl_minutes"`
+	MaxSessions            int      `json:"max_sessions"`
+	MaxLogLines            int      `json:"max_log_lines"`
+	AutoRollback           bool     `json:"auto_rollback"`
 }
 
 func defaultConfig() Config {
@@ -94,11 +95,12 @@ func (c Config) validate() error {
 		return errors.New("mode command and mode file are required")
 	}
 	for name, path := range map[string]string{
-		"leigod_update_command": c.LeiGodUpdateCommand,
-		"node_guard_command":    c.NodeGuardCommand,
-		"node_guard_state_path": c.NodeGuardStatePath,
-		"node_guard_log_path":   c.NodeGuardLogPath,
-		"node_guard_cron_path":  c.NodeGuardCronPath,
+		"leigod_update_command":     c.LeiGodUpdateCommand,
+		"node_guard_command":        c.NodeGuardCommand,
+		"node_guard_state_path":     c.NodeGuardStatePath,
+		"node_guard_log_path":       c.NodeGuardLogPath,
+		"node_guard_cron_path":      c.NodeGuardCronPath,
+		"routing_guard_policy_path": c.RoutingGuardPolicyPath,
 	} {
 		if path == "" && name != "node_guard_cron_path" {
 			continue

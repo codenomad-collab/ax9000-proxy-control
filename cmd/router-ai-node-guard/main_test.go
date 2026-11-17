@@ -285,3 +285,33 @@ func TestValidateManagedRulesRequiresGitHubOnAIGroup(t *testing.T) {
 		t.Fatal("legacy GITHUB-US rule accepted")
 	}
 }
+
+func TestDelayUsesProviderNamespaceAfterMihomoUpgrade(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/proxies/") {
+			t.Error("provider node probed as global proxy")
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, "/providers/proxies/household/") || !strings.HasSuffix(r.URL.Path, "/healthcheck") {
+			t.Error("unexpected probe path", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("expected") != "401" || r.Header.Get("Authorization") != "Bearer test-only" {
+			t.Error("probe/auth contract lost")
+		}
+		calls++
+		_, _ = w.Write([]byte(`{"delay":170}`))
+	}))
+	defer server.Close()
+	previous := controllerURL
+	controllerURL = server.URL
+	t.Cleanup(func() { controllerURL = previous })
+	c := &Controller{secret: "test-only", client: &http.Client{Timeout: time.Second}}
+	v, err := c.delay("🇺🇸美国推荐 | 示例", ProbeTarget{URL: "https://api.openai.com/v1/models", ExpectedStatus: "401"})
+	if err != nil || v != 170 || calls != 1 {
+		t.Fatalf("provider probe failed: %d %v calls=%d", v, err, calls)
+	}
+}

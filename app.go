@@ -30,6 +30,7 @@ type App struct {
 	collectors   *collectorManager
 	meshNodes    *meshNodesResolver
 	ssh          *sshManager
+	routing      *routingGuard
 	last         actionRecord
 }
 
@@ -96,6 +97,7 @@ func newAppWithMeshResolver(cfg Config, configPath string, capabilities DeviceCa
 	}
 	app.collectors = newCollectorManager(defaultCollectorRegistrations(cfg, capabilities, meshResolver))
 	app.collectors.Start()
+	app.routing = newRoutingGuard(app)
 	return app
 }
 
@@ -113,6 +115,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/action", a.requireAuth(a.handleAction))
 	mux.HandleFunc("/api/node-guard", a.requireAuth(a.handleNodeGuard))
 	mux.HandleFunc("/api/node-guard/action", a.requireAuth(a.handleNodeGuardAction))
+	mux.HandleFunc("/api/routing-guard", a.requireAuth(a.handleRoutingGuard))
+	mux.HandleFunc("/api/routing-guard/action", a.requireAuth(a.handleRoutingGuardAction))
 	mux.HandleFunc("/api/ssh", a.requireAuth(a.handleSSHStatus))
 	mux.HandleFunc("/api/ssh/action", a.requireAuth(a.handleSSHAction))
 

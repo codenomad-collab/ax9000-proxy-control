@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const version = "0.9.0"
+const version = "0.10.0"
 
 func main() {
 	configPath := flag.String("config", "/data/router-proxy-web/config.json", "configuration file")
@@ -41,6 +41,9 @@ func main() {
 	meshResolver := newMeshNodesResolver(configuredMeshNodesPath, capabilities.MeshNodesPath)
 
 	app := newAppWithMeshResolver(cfg, *configPath, capabilities, meshResolver)
+	routingContext, stopRouting := context.WithCancel(context.Background())
+	defer stopRouting()
+	app.routing.start(routingContext)
 	server := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           app.routes(),
@@ -62,6 +65,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	stopRouting()
 	app.audit.add("info", "system", "控制服务正在退出")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
