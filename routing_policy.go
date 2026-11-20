@@ -90,7 +90,7 @@ func loadRoutingPolicy(path string) (routingPolicy, error) {
 	if !filepath.IsAbs(p.Root) || strings.ContainsAny(p.Root, "\r\n") || p.Root == "/" {
 		return p, errors.New("ShellCrash 路径不正确")
 	}
-	if p.CheckSeconds < 30 || p.QualitySeconds < 300 || p.CooldownSeconds < 300 || p.DailyBytes < p.ProbeBytes || p.DailyBytes > 1<<30 || p.ProbeBytes < 1<<20 || p.ProbeBytes > 16<<20 {
+	if p.CheckSeconds < 30 || p.QualitySeconds < 300 || p.CooldownSeconds < 300 || p.DailyBytes < p.ProbeBytes || p.DailyBytes > 2<<30 || p.ProbeBytes < 1<<20 || p.ProbeBytes > 16<<20 {
 		return p, errors.New("检测周期或测速预算超出范围")
 	}
 	if _, err = regexp.Compile(p.CandidateFilter); err != nil || p.CandidateFilter == "" {

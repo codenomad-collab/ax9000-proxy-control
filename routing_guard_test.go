@@ -398,3 +398,47 @@ func TestRoutingStablePoolDoesNotChurnOnProbeRotation(t *testing.T) {
 		t.Fatal("renamed candidate not replaced", got)
 	}
 }
+
+func TestRoutingPolicyAcceptsTwoGiBBudgetAndKeepsUsage(t *testing.T) {
+	root := t.TempDir()
+	policy := routingTestPolicy(root)
+	policy.DailyBytes = 2 << 30
+	path := filepath.Join(root, "policy.json")
+	write := func() {
+		t.Helper()
+		b, e := json.Marshal(policy)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e = os.WriteFile(path, b, 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	write()
+	loaded, e := loadRoutingPolicy(path)
+	if e != nil || loaded.DailyBytes != 2<<30 {
+		t.Fatalf("2GiB policy rejected: %v", e)
+	}
+	app := &App{cfg: Config{RoutingGuardPolicyPath: path}, audit: newAuditLog(10)}
+	g := newRoutingGuard(app)
+	g.state.Day = g.day()
+	g.state.Spent = 256 << 20
+	if e = g.saveLocked(); e != nil {
+		t.Fatal(e)
+	}
+	restarted := newRoutingGuard(app)
+	if !restarted.configured || restarted.state.Spent != 256<<20 {
+		t.Fatal("budget increase reset previous usage")
+	}
+	if e = restarted.reserveProbe(); e != nil {
+		t.Fatal("new allowance unavailable", e)
+	}
+	if restarted.state.Spent != (256<<20)+(8<<20) {
+		t.Fatal("reservation did not retain previous usage")
+	}
+	policy.DailyBytes = (2 << 30) + 1
+	write()
+	if _, e = loadRoutingPolicy(path); e == nil {
+		t.Fatal("unsupported upper limit accepted")
+	}
+}
