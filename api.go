@@ -175,6 +175,7 @@ func (a *App) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		"maximum_session_rows":    a.cfg.MaxSessions,
 		"audit_entries":           len(a.audit.snapshot(0)),
 		"node_guard":              nodeGuard,
+		"capabilities":            a.capabilities,
 	})
 }
 

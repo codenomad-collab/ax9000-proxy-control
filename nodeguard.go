@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	nodeGuardCronComment = "# AX9000 AI node guard (managed by ax9000-proxy-control)"
+	nodeGuardCronComment = "# Router AI node guard (managed by router-proxy-control)"
 	nodeGuardSchedule    = "every 30 minutes"
 )
 
@@ -38,12 +38,18 @@ type NodeGuardProbe struct {
 type nodeGuardState struct {
 	SchemaVersion       int                       `json:"schema_version"`
 	Version             string                    `json:"guard_version"`
+	Initialized         bool                      `json:"initialized"`
+	BaselineAt          string                    `json:"baseline_at,omitempty"`
 	LastCheck           string                    `json:"last_check"`
 	Status              string                    `json:"status"`
 	ConsecutiveFailures int                       `json:"consecutive_failures"`
 	ExpectedNodes       NodeGuardNodes            `json:"expected_nodes"`
 	LastIssue           string                    `json:"last_issue,omitempty"`
 	LastRepair          string                    `json:"last_repair,omitempty"`
+	LastRollback        string                    `json:"last_rollback,omitempty"`
+	RollbackStatus      string                    `json:"rollback_status,omitempty"`
+	LastExercise        string                    `json:"last_exercise,omitempty"`
+	ExerciseStatus      string                    `json:"exercise_status,omitempty"`
 	Checks              map[string]NodeGuardProbe `json:"checks,omitempty"`
 }
 
@@ -55,12 +61,18 @@ type NodeGuardStatus struct {
 	SchedulerRunning    bool                      `json:"scheduler_running"`
 	Schedule            string                    `json:"schedule"`
 	StateAvailable      bool                      `json:"state_available"`
+	Initialized         bool                      `json:"initialized"`
+	BaselineAt          string                    `json:"baseline_at,omitempty"`
 	Status              string                    `json:"status"`
 	LastCheck           string                    `json:"last_check,omitempty"`
 	ConsecutiveFailures int                       `json:"consecutive_failures"`
 	ExpectedNodes       NodeGuardNodes            `json:"expected_nodes"`
 	LastIssue           string                    `json:"last_issue,omitempty"`
 	LastRepair          string                    `json:"last_repair,omitempty"`
+	LastRollback        string                    `json:"last_rollback,omitempty"`
+	RollbackStatus      string                    `json:"rollback_status,omitempty"`
+	LastExercise        string                    `json:"last_exercise,omitempty"`
+	ExerciseStatus      string                    `json:"exercise_status,omitempty"`
 	Checks              map[string]NodeGuardProbe `json:"checks"`
 	Logs                []string                  `json:"logs"`
 	Message             string                    `json:"message,omitempty"`
@@ -190,6 +202,8 @@ func (a *App) nodeGuardStatus() NodeGuardStatus {
 	state, err := readNodeGuardState(a.cfg.NodeGuardStatePath)
 	if err == nil {
 		status.StateAvailable = true
+		status.Initialized = state.Initialized
+		status.BaselineAt = state.BaselineAt
 		status.Version = state.Version
 		status.Status = state.Status
 		status.LastCheck = state.LastCheck
@@ -197,6 +211,10 @@ func (a *App) nodeGuardStatus() NodeGuardStatus {
 		status.ExpectedNodes = state.ExpectedNodes
 		status.LastIssue = redactSensitive(state.LastIssue)
 		status.LastRepair = state.LastRepair
+		status.LastRollback = state.LastRollback
+		status.RollbackStatus = state.RollbackStatus
+		status.LastExercise = state.LastExercise
+		status.ExerciseStatus = state.ExerciseStatus
 		status.Checks = state.Checks
 	} else if !errors.Is(err, os.ErrNotExist) {
 		status.Message = "状态文件无法读取: " + err.Error()

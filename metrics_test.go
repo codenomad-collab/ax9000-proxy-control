@@ -79,31 +79,41 @@ func TestReadEthernetLinks(t *testing.T) {
 	writeLink("eth2", "1", "up", "100", "half")
 	writeLink("eth0", "0", "down", "10", "half")
 
-	links := readEthernetLinks(root)
+	links := readEthernetLinks(root, "eth4")
 	if len(links) != 3 {
 		t.Fatalf("unexpected link count: %d", len(links))
 	}
-	if links[0].Name != "eth4" || !links[0].Up || links[0].SpeedMbps != 1000 || links[0].Duplex != "full" {
-		t.Fatalf("unexpected WAN link: %+v", links[0])
+	// 自动发现按接口名字典序输出：eth0 / eth2 / eth4
+	if links[0].Name != "eth0" || links[0].Up || links[0].SpeedMbps != 0 || links[0].Duplex != "" {
+		t.Fatalf("down link should not expose stale negotiation: %+v", links[0])
+	}
+	if links[0].Label != "LAN 端口 eth0" || links[0].Role != "独立 LAN" {
+		t.Fatalf("unbonded port should be labeled as independent LAN: %+v", links[0])
 	}
 	if links[1].Name != "eth2" || links[1].SpeedMbps != 100 || links[1].Duplex != "half" {
 		t.Fatalf("unexpected LAN link: %+v", links[1])
 	}
-	if links[2].Name != "eth0" || links[2].Up || links[2].SpeedMbps != 0 || links[2].Duplex != "" {
-		t.Fatalf("down link should not expose stale negotiation: %+v", links[2])
+	if links[2].Name != "eth4" || !links[2].Up || links[2].SpeedMbps != 1000 || links[2].Duplex != "full" {
+		t.Fatalf("unexpected WAN link: %+v", links[2])
 	}
-	if links[2].Label != "LAN 端口 eth0" || links[2].Role != "独立 LAN" {
-		t.Fatalf("unbonded port should be labeled as independent LAN: %+v", links[2])
+	if links[2].Label != "WAN 上联" || links[2].Role != "拨号物理口" {
+		t.Fatalf("WAN role should follow the resolved device, not a fixed name: %+v", links[2])
 	}
 
 	writeLink("eth1", "1", "up", "1000", "full")
 	writeLink("bond0", "1", "up", "1000", "full")
+	if err := os.MkdirAll(filepath.Join(root, "bond0", "bonding"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bond0", "bonding", "slaves"), []byte("eth0 eth1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"eth0", "eth1"} {
 		if err := os.Symlink("../bond0", filepath.Join(root, name, "master")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	bonded := readEthernetLinks(root)
+	bonded := readEthernetLinks(root, "eth4")
 	byName := make(map[string]LinkStats, len(bonded))
 	for _, link := range bonded {
 		byName[link.Name] = link
@@ -113,6 +123,142 @@ func TestReadEthernetLinks(t *testing.T) {
 	}
 	if byName["bond0"].Label != "LAN 聚合接口" {
 		t.Fatalf("bond interface was not included: %+v", byName["bond0"])
+	}
+}
+
+func TestDetectWANInterface(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "network")
+	legacy := `config interface 'loopback'
+	option ifname 'lo'
+
+config interface 'lan'
+	option ifname 'eth0 eth1'
+	option proto 'static'
+
+config interface 'wan'
+	option ifname 'eth4'
+	option proto 'pppoe'
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := detectWANInterface(path, ""); got != "eth4" {
+		t.Fatalf("expected eth4 parsed from option ifname, got %q", got)
+	}
+	// 多设备 ifname 只取第一个
+	if got := readUCIInterfaceDevice(path, "lan"); got != "eth0" {
+		t.Fatalf("expected first device of multi-value ifname, got %q", got)
+	}
+	// 显式覆盖优先于 UCI
+	if got := detectWANInterface(path, "eth9"); got != "eth9" {
+		t.Fatalf("explicit override should win, got %q", got)
+	}
+
+	modern := `config interface 'lan'
+	option device 'br-lan'
+
+config interface 'wan'
+	option device 'eth3'
+`
+	modernPath := filepath.Join(dir, "network-modern")
+	if err := os.WriteFile(modernPath, []byte(modern), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := detectWANInterface(modernPath, ""); got != "eth3" {
+		t.Fatalf("expected eth3 parsed from option device, got %q", got)
+	}
+
+	// 配置文件缺失时不应 panic
+	if got := detectWANInterface(filepath.Join(dir, "absent"), ""); got != "" {
+		t.Fatalf("missing config should yield empty result, got %q", got)
+	}
+}
+
+func TestDiscoverEthernetInterfaces(t *testing.T) {
+	root := t.TempDir()
+	create := func(name string, attrs ...string) {
+		t.Helper()
+		base := filepath.Join(root, name)
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, attr := range attrs {
+			if err := os.WriteFile(filepath.Join(base, attr), []byte("1\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// 物理以太网口：具备 speed / carrier
+	for _, name := range []string{"eth0", "eth1", "eth2", "eth3", "eth4"} {
+		create(name, "speed", "carrier")
+	}
+	// 虚拟或逻辑接口：必须被排除
+	for _, name := range []string{"br-lan", "pppoe-wan", "wl0", "wl1", "tun0", "utun", "bond0", "lo", "erspan0", "ip6gre0", "miireg", "soc0", "wifi0"} {
+		create(name, "carrier")
+	}
+
+	got := discoverEthernetInterfaces(root)
+	want := []string{"eth0", "eth1", "eth2", "eth3", "eth4"}
+	if len(got) != len(want) {
+		t.Fatalf("expected only physical ports %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected sorted physical ports %v, got %v", want, got)
+		}
+	}
+}
+
+func TestBuildMonitoredInterfaces(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"eth0", "eth4", "br-lan", "pppoe-wan", "utun", "tun_Game", "wl0", "wl1"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items := buildMonitoredInterfaces(root, "eth4")
+	byName := make(map[string]string, len(items))
+	for _, item := range items {
+		byName[item.Name] = item.Label
+	}
+	if byName["pppoe-wan"] != "公网 WAN" {
+		t.Fatalf("pppoe-wan should be labelled as public WAN: %v", byName)
+	}
+	if byName["br-lan"] != "家庭 LAN" {
+		t.Fatalf("br-lan should be included: %v", byName)
+	}
+	if byName["wl0"] != "无线接口 wl0" || byName["wl1"] != "无线接口 wl1" {
+		t.Fatalf("wireless interfaces should be auto-discovered: %v", byName)
+	}
+	if byName["utun"] != "ShellCrash 隧道" || byName["tun_Game"] != "雷神游戏隧道" {
+		t.Fatalf("tunnel interfaces should be included: %v", byName)
+	}
+	// pppoe-wan 已代表 WAN，不应再重复加入物理口
+	if _, exists := byName["eth4"]; exists {
+		t.Fatalf("physical WAN must not duplicate the pppoe entry: %v", byName)
+	}
+}
+
+func TestShouldShowInterface(t *testing.T) {
+	cases := []struct {
+		name     string
+		mode     string
+		counters networkCounters
+		want     bool
+	}{
+		{"utun", "shellcrash", networkCounters{}, true},
+		{"utun", "leigod", networkCounters{}, false},
+		{"utun", "off", networkCounters{}, false},
+		{"tun_Game", "leigod", networkCounters{}, true},
+		{"tun_Game", "shellcrash", networkCounters{}, false},
+		{"pppoe-wan", "off", networkCounters{}, true},
+		{"br-lan", "shellcrash", networkCounters{}, true},
+	}
+	for _, tc := range cases {
+		if got := shouldShowInterface(tc.name, tc.mode, tc.counters); got != tc.want {
+			t.Fatalf("shouldShowInterface(%q, %q) = %v, want %v", tc.name, tc.mode, got, tc.want)
+		}
 	}
 }
 

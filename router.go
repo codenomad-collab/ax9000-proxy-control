@@ -29,6 +29,7 @@ type LeiGodState struct {
 	GameRunning   bool `json:"game_running"`
 	TunGameUp     bool `json:"tun_game_up"`
 	TargetCount   int  `json:"target_count"`
+	UpdateEnabled bool `json:"update_enabled"`
 }
 
 type SystemState struct {
@@ -149,6 +150,9 @@ func (a *App) currentStatus() StatusResponse {
 	leigod.TunGameUp = interfaceUp("tun_Game")
 	leigod.TargetCount = len(a.leigodTargets(context.Background()))
 	leigod.Healthy = leigod.DaemonRunning && leigod.WebRunning
+	if info, err := os.Stat(a.cfg.LeiGodUpdateCommand); err == nil && info.Mode()&0o111 != 0 {
+		leigod.UpdateEnabled = true
+	}
 
 	return StatusResponse{
 		Version:    version,
@@ -211,6 +215,9 @@ func (a *App) performAction(action string) actionResult {
 	defer a.actionMu.Unlock()
 
 	previous := readMode(a.cfg.ModeFile)
+	if action == "update_leigod" {
+		return a.performLeiGodUpdate(action, previous)
+	}
 	target, restart, err := actionTarget(action)
 	if err != nil {
 		return actionResult{Action: action, Message: err.Error(), Status: a.currentStatus()}
@@ -267,6 +274,46 @@ func (a *App) performAction(action string) actionResult {
 	}
 	a.last.set(action, false, message)
 	return actionResult{Action: action, Successful: false, RolledBack: rolledBack, Message: message, Output: redactSensitive(output.String()), Status: a.currentStatus()}
+}
+
+func (a *App) performLeiGodUpdate(action, currentMode string) actionResult {
+	a.audit.add("info", "leigod-update", "请求手动检查雷神更新，当前模式 "+currentMode)
+	if currentMode == "leigod" {
+		message := "请先切换到 ShellCrash 或全部停止，再检查雷神更新"
+		a.audit.add("warning", "leigod-update", message)
+		a.last.set(action, false, message)
+		return actionResult{Action: action, Message: message, Status: a.currentStatus()}
+	}
+	info, err := os.Stat(a.cfg.LeiGodUpdateCommand)
+	if err != nil || info.Mode()&0o111 == 0 {
+		message := "雷神手动更新入口尚未安装"
+		a.audit.add("error", "leigod-update", message)
+		a.last.set(action, false, message)
+		return actionResult{Action: action, Message: message, Status: a.currentStatus()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	output, runErr := exec.CommandContext(ctx, a.cfg.LeiGodUpdateCommand, "check").CombinedOutput()
+	redacted := redactSensitive(string(output))
+	if ctx.Err() != nil {
+		runErr = fmt.Errorf("command timeout: %w", ctx.Err())
+	}
+	if runErr != nil {
+		message := "雷神更新检查启动失败: " + runErr.Error()
+		if redacted != "" {
+			message += ": " + redacted
+		}
+		a.audit.add("error", "leigod-update", message)
+		a.last.set(action, false, message)
+		return actionResult{Action: action, Message: message, Output: redacted, Status: a.currentStatus()}
+	}
+	message := "雷神更新检查已启动，后台最多运行 3 分钟"
+	if redacted != "" {
+		message = redacted
+	}
+	a.audit.add("success", "leigod-update", message)
+	a.last.set(action, true, message)
+	return actionResult{Action: action, Successful: true, Message: message, Output: redacted, Status: a.currentStatus()}
 }
 
 func actionTarget(action string) (target string, restart bool, err error) {

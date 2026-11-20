@@ -1,9 +1,15 @@
 #!/bin/sh
 
-APP=/extdisks/sda1/router-proxy-control/bin/ax9000-proxy-control
 CONFIG=/data/router-proxy-web/config.json
+APP_PATH_FILE=/data/router-proxy-web/app-path
 
-while [ ! -x "$APP" ] || [ ! -r "$CONFIG" ]; do
+while :; do
+    APP="$(cat "$APP_PATH_FILE" 2>/dev/null || true)"
+    case "$APP" in
+        /*) ;;
+        *) APP="" ;;
+    esac
+    [ -n "$APP" ] && [ -x "$APP" ] && [ -r "$CONFIG" ] && break
     logger -t router-proxy-web "waiting for USB application or configuration"
     sleep 5
 done

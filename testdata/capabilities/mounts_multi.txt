@@ -1,0 +1,4 @@
+/dev/sda1 {{VFAT}} vfat rw,relatime 0 0
+/dev/sda2 {{EXT4}} ext4 rw,relatime 0 0
+ubi1:cfg /data ubifs rw,sync 0 0
+overlay {{DOCKER}} overlay rw,relatime 0 0

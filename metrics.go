@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,13 +80,14 @@ type MeshStats struct {
 }
 
 type SystemMetricsResponse struct {
-	CPU        CPUStats         `json:"cpu"`
-	Memory     MemoryStats      `json:"memory"`
-	Storage    []StorageStats   `json:"storage"`
-	Links      []LinkStats      `json:"links"`
-	Mesh       MeshStats        `json:"mesh"`
-	Interfaces []InterfaceStats `json:"interfaces"`
-	Timestamp  time.Time        `json:"timestamp"`
+	CPU        CPUStats                   `json:"cpu"`
+	Memory     MemoryStats                `json:"memory"`
+	Storage    []StorageStats             `json:"storage"`
+	Links      []LinkStats                `json:"links"`
+	Mesh       MeshStats                  `json:"mesh"`
+	Interfaces []InterfaceStats           `json:"interfaces"`
+	Extended   map[string]CollectorResult `json:"extended"`
+	Timestamp  time.Time                  `json:"timestamp"`
 }
 
 type cpuCounters struct {
@@ -106,18 +108,160 @@ type systemMetricsSampler struct {
 	lastNetAt   time.Time
 }
 
-var monitoredInterfaces = []struct {
+// monitoredInterface 描述一个需要采样速率的网络接口。
+type monitoredInterface struct {
 	Name  string
 	Label string
-}{
-	{Name: "pppoe-wan", Label: "公网 WAN"},
-	{Name: "br-lan", Label: "家庭 LAN"},
-	{Name: "utun", Label: "ShellCrash 隧道"},
-	{Name: "tun_Game", Label: "雷神游戏隧道"},
-	{Name: "wl0", Label: "无线接口 wl0"},
-	{Name: "wl1", Label: "无线接口 wl1"},
-	{Name: "wl2", Label: "无线接口 wl2"},
-	{Name: "wl7", Label: "无线接口 wl7"},
+}
+
+// virtualInterfacePrefixes 是需要排除的非物理接口前缀。
+// 这些接口由内核或用户态程序创建，不是可插拔的以太网口。
+var virtualInterfacePrefixes = []string{
+	"lo", "br-", "bond", "wl", "tun", "utun", "pppoe", "veth",
+	"ifb", "sit", "ip6tnl", "ip6gre", "gre", "erspan", "teql", "dummy", "wds", "ap",
+	"wifi", "soc", "miireg",
+}
+
+func isVirtualInterface(name string) bool {
+	for _, prefix := range virtualInterfacePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func sysfsEntryExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// discoverEthernetInterfaces 扫描 sysfs，返回物理以太网口名称。
+// 判据是接口具备 speed 或 carrier 属性，这能排除纯软件接口，
+// 同时不依赖具体接口命名——eth0/eth4 之类的编号因机型而异。
+func discoverEthernetInterfaces(root string) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if isVirtualInterface(name) {
+			continue
+		}
+		base := filepath.Join(root, name)
+		if !sysfsEntryExists(filepath.Join(base, "speed")) && !sysfsEntryExists(filepath.Join(base, "carrier")) {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// discoverPrefixedInterfaces 返回指定前缀的接口名，用于无线接口与 bond 逻辑口。
+func discoverPrefixedInterfaces(root, prefix string) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), prefix) {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// readUCIInterfaceDevice 从 UCI network 配置里读取某个 interface 段绑定的设备名。
+// 同时兼容 option ifname（旧写法）与 option device（新写法）。
+func readUCIInterfaceDevice(path, section string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	inSection := false
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "config ") {
+			inSection = strings.HasPrefix(line, "config interface") &&
+				(strings.Contains(line, "'"+section+"'") || strings.Contains(line, "\""+section+"\""))
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		for _, key := range []string{"ifname", "device"} {
+			value := uciOptionValue(line, key)
+			if value == "" {
+				continue
+			}
+			// ifname 可能是空格分隔的多个设备，取第一个
+			if fields := strings.Fields(value); len(fields) > 0 {
+				return fields[0]
+			}
+		}
+	}
+	return ""
+}
+
+func uciOptionValue(line, key string) string {
+	prefix := "option " + key
+	if !strings.HasPrefix(line, prefix) {
+		return ""
+	}
+	return strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, prefix)), "'\"")
+}
+
+// detectWANInterface 解析 WAN 口绑定的物理设备。
+// 优先用显式配置覆盖，其次读 UCI network，最后尝试常见拨号段名。
+func detectWANInterface(networkConfigPath, override string) string {
+	if override != "" {
+		return override
+	}
+	if device := readUCIInterfaceDevice(networkConfigPath, "wan"); device != "" {
+		return device
+	}
+	for _, section := range []string{"wan6", "pppoe", "wan_pppoe"} {
+		if device := readUCIInterfaceDevice(networkConfigPath, section); device != "" {
+			return device
+		}
+	}
+	return ""
+}
+
+// buildMonitoredInterfaces 动态构建需要采样速率的接口列表，不依赖具体机型的接口命名。
+func buildMonitoredInterfaces(root, wanInterface string) []monitoredInterface {
+	items := make([]monitoredInterface, 0, 12)
+
+	if sysfsEntryExists(filepath.Join(root, "pppoe-wan")) {
+		items = append(items, monitoredInterface{Name: "pppoe-wan", Label: "公网 WAN"})
+	} else if wanInterface != "" && sysfsEntryExists(filepath.Join(root, wanInterface)) {
+		items = append(items, monitoredInterface{Name: wanInterface, Label: "公网 WAN"})
+	}
+
+	if sysfsEntryExists(filepath.Join(root, "br-lan")) {
+		items = append(items, monitoredInterface{Name: "br-lan", Label: "家庭 LAN"})
+	}
+
+	if sysfsEntryExists(filepath.Join(root, "utun")) {
+		items = append(items, monitoredInterface{Name: "utun", Label: "ShellCrash 隧道"})
+	}
+	if sysfsEntryExists(filepath.Join(root, "tun_Game")) {
+		items = append(items, monitoredInterface{Name: "tun_Game", Label: "雷神游戏隧道"})
+	}
+
+	for _, name := range discoverPrefixedInterfaces(root, "wl") {
+		items = append(items, monitoredInterface{Name: name, Label: "无线接口 " + name})
+	}
+
+	return items
 }
 
 func (a *App) systemMetrics() SystemMetricsResponse {
@@ -126,6 +270,20 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 
 	now := time.Now()
 	system := readSystemState()
+	wanInterface := a.capabilities.WANInterface
+	if wanInterface == "" {
+		wanInterface = detectWANInterface(a.cfg.NetworkConfigPath, a.cfg.WANInterface)
+	}
+	// Mesh 缓存路径在运行期惰性解析：控制台可能早于固件生成缓存文件启动，
+	// 且该文件位于 tmpfs，重启后会被重建。
+	// 保留静态配置作为兼容回退。生产入口会传入惰性解析器，
+	// 但测试辅助构造函数和其他包内调用允许解析器为 nil；此时顶层
+	// system-metrics 必须与 meshCollector 一样继续使用 cfg 中的路径。
+	meshNodesPath := a.cfg.MeshNodesPath
+	if a.meshNodes != nil {
+		meshNodesPath = a.meshNodes.Resolve()
+	}
+
 	response := SystemMetricsResponse{
 		CPU: CPUStats{
 			Cores:  runtime.NumCPU(),
@@ -134,10 +292,13 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 			Load15: system.Load15,
 		},
 		Memory:    memoryStats(system),
-		Storage:   readStorageStats(),
-		Links:     readEthernetLinks("/sys/class/net"),
-		Mesh:      readMeshStats("/etc/config/xiaoqiang", "/tmp/xq_whc_quire", now),
+		Storage:   readStorageStats(a.cfg.ExternalStorage),
+		Links:     readEthernetLinks("/sys/class/net", wanInterface),
+		Mesh:      readMeshStats(a.cfg.MeshConfigPath, meshNodesPath, now),
 		Timestamp: now,
+	}
+	if a.collectors != nil {
+		response.Extended = a.collectors.Snapshot()
 	}
 
 	if current, ok := readCPUCounters("/proc/stat"); ok {
@@ -149,7 +310,7 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 	currentNetwork := readNetworkCounters("/proc/net/dev")
 	deltaSeconds := now.Sub(a.metrics.lastNetAt).Seconds()
 	mode := readMode(a.cfg.ModeFile)
-	for _, item := range monitoredInterfaces {
+	for _, item := range buildMonitoredInterfaces("/sys/class/net", wanInterface) {
 		current, exists := currentNetwork[item.Name]
 		if !exists || !shouldShowInterface(item.Name, mode, current) {
 			continue
@@ -176,42 +337,67 @@ func (a *App) systemMetrics() SystemMetricsResponse {
 	return response
 }
 
-func readEthernetLinks(root string) []LinkStats {
-	targets := []LinkStats{
-		{Name: "eth4", Label: "WAN 上联", Role: "PPPoE 物理口"},
-		{Name: "eth2", Label: "LAN 端口 eth2", Role: "家庭 LAN"},
-		{Name: "eth3", Label: "LAN 端口 eth3", Role: "家庭 LAN"},
-	}
-	for _, name := range []string{"eth0", "eth1"} {
+// readEthernetLinks 自动发现物理以太网口，并依据 UCI 解析出的 WAN 口标注角色。
+// 接口数量与命名不再写死，因此同一份程序可跑在千兆机型与 2.5G/万兆机型上。
+func readEthernetLinks(root, wanInterface string) []LinkStats {
+	names := discoverEthernetInterfaces(root)
+	result := make([]LinkStats, 0, len(names)+1)
+
+	for _, name := range names {
+		target := LinkStats{Name: name}
 		master := interfaceMaster(root, name)
-		if strings.HasPrefix(master, "bond") {
-			targets = append(targets, LinkStats{Name: name, Label: "聚合成员 " + name, Role: master})
-		} else {
-			targets = append(targets, LinkStats{Name: name, Label: "LAN 端口 " + name, Role: "独立 LAN"})
+		switch {
+		case strings.HasPrefix(master, "bond"):
+			target.Label = "聚合成员 " + name
+			target.Role = master
+		case name == wanInterface:
+			target.Label = "WAN 上联"
+			target.Role = "拨号物理口"
+		default:
+			target.Label = "LAN 端口 " + name
+			target.Role = "独立 LAN"
 		}
-	}
-	if info, err := os.Stat(filepath.Join(root, "bond0")); err == nil && info.IsDir() {
-		targets = append(targets, LinkStats{Name: "bond0", Label: "LAN 聚合接口", Role: "逻辑聚合"})
-	}
-	result := make([]LinkStats, 0, len(targets))
-	for _, target := range targets {
-		base := filepath.Join(root, target.Name)
-		if info, err := os.Stat(base); err != nil || !info.IsDir() {
+		if !fillLinkState(root, &target) {
 			continue
-		}
-		carrier := strings.TrimSpace(readSmallFile(filepath.Join(base, "carrier")))
-		operState := strings.TrimSpace(readSmallFile(filepath.Join(base, "operstate")))
-		target.Up = carrier == "1" && operState != "down"
-		if target.Up {
-			target.SpeedMbps, _ = strconv.Atoi(strings.TrimSpace(readSmallFile(filepath.Join(base, "speed"))))
-			duplex := strings.ToLower(strings.TrimSpace(readSmallFile(filepath.Join(base, "duplex"))))
-			if duplex == "full" || duplex == "half" {
-				target.Duplex = duplex
-			}
 		}
 		result = append(result, target)
 	}
+
+	for _, name := range discoverPrefixedInterfaces(root, "bond") {
+		if !bondHasMembers(root, name) {
+			continue
+		}
+		target := LinkStats{Name: name, Label: "LAN 聚合接口", Role: "逻辑聚合"}
+		if fillLinkState(root, &target) {
+			result = append(result, target)
+		}
+	}
+
 	return result
+}
+
+func bondHasMembers(root, name string) bool {
+	data, err := os.ReadFile(filepath.Join(root, name, "bonding", "slaves"))
+	return err == nil && len(strings.Fields(string(data))) > 0
+}
+
+// fillLinkState 读取单个接口的链路状态；接口不存在时返回 false。
+func fillLinkState(root string, target *LinkStats) bool {
+	base := filepath.Join(root, target.Name)
+	if info, err := os.Stat(base); err != nil || !info.IsDir() {
+		return false
+	}
+	carrier := strings.TrimSpace(readSmallFile(filepath.Join(base, "carrier")))
+	operState := strings.TrimSpace(readSmallFile(filepath.Join(base, "operstate")))
+	target.Up = carrier == "1" && operState != "down"
+	if target.Up {
+		target.SpeedMbps, _ = strconv.Atoi(strings.TrimSpace(readSmallFile(filepath.Join(base, "speed"))))
+		duplex := strings.ToLower(strings.TrimSpace(readSmallFile(filepath.Join(base, "duplex"))))
+		if duplex == "full" || duplex == "half" {
+			target.Duplex = duplex
+		}
+	}
+	return true
 }
 
 func interfaceMaster(root, name string) string {
@@ -432,31 +618,48 @@ func readNetworkCounters(path string) map[string]networkCounters {
 }
 
 func shouldShowInterface(name, mode string, counters networkCounters) bool {
-	switch name {
-	case "utun":
+	switch {
+	case strings.HasPrefix(name, "utun"):
 		return mode == "shellcrash"
-	case "tun_Game":
+	case name == "tun_Game":
 		return mode == "leigod"
-	case "wl0", "wl1", "wl2", "wl7":
+	case strings.HasPrefix(name, "wl"):
 		return interfaceUp(name) || counters.RXBytes > 0 || counters.TXBytes > 0
 	default:
 		return true
 	}
 }
 
-func readStorageStats() []StorageStats {
-	targets := []struct {
-		Name string
-		Path string
-	}{
+type storageTarget struct {
+	Name string
+	Path string
+}
+
+// readStorageStats 返回内部数据分区与外接存储的用量。
+// 外接存储优先使用配置覆盖，否则从挂载表选择可写的持久化文件系统。
+func readStorageStats(externalOverride string) []StorageStats {
+	targets := []storageTarget{
 		{Name: "内部数据存储", Path: "/data"},
-		{Name: "ShellCrash 外接存储", Path: "/extdisks/sda1"},
 	}
+	external := externalOverride
+	if external == "" {
+		external = discoverExternalStorage()
+	}
+	if external != "" {
+		targets = append(targets, storageTarget{Name: "外接存储", Path: external})
+	}
+
 	result := make([]StorageStats, 0, len(targets))
 	for _, target := range targets {
 		result = append(result, statFilesystem(target.Name, target.Path))
 	}
 	return result
+}
+
+// discoverExternalStorage 使用与启动能力探测相同的确定性选择规则。
+func discoverExternalStorage() string {
+	capability := detectExternalStorage("", "/proc/mounts")
+	return capability.Path
 }
 
 func statFilesystem(name, path string) StorageStats {

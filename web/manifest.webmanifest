@@ -1,6 +1,6 @@
 {
-  "name": "AX9000 代理控制台",
-  "short_name": "AX9000 控制台",
+  "name": "BE10000 代理控制台",
+  "short_name": "BE10000 控制台",
   "description": "ShellCrash 与雷神加速器互斥切换控制台",
   "start_url": "/",
   "scope": "/",
